@@ -1,0 +1,239 @@
+Stage 1: Basic Network & Messaging (Two Devices)
+1. Objective
+
+Enable two users on two different devices (PCs, laptops, mobiles) to connect to the same Node.js server and exchange real-time chat messages over the network.
+
+2. Scope
+
+Run a Node.js + Socket.IO server accessible to multiple devices.
+
+Connect two devices either via:
+
+Local network (LAN / Wi-Fi) using server’s private IP.
+
+Public internet using a tunneling service (ngrok, localtunnel) or cloud hosting (Heroku, Render, Railway, AWS, etc.).
+
+Users can log in with unique usernames and chat in real-time.
+
+3. Features
+3.1 Multi-Device User Login
+
+User provides a username.
+
+Devices connect to the same backend server using IP/domain.
+
+Server manages connected clients in memory.
+
+3.2 Real-time Messaging Across Devices
+
+Messages are delivered instantly from Device A → Device B.
+
+Each message includes sender + timestamp.
+
+3.3 Basic UI (same as Stage 1 Option 1)
+
+Simple login, chat window, and message input.
+
+4. Non-Goals (Stage 1 Option 2)
+
+No authentication beyond username.
+
+No end-to-end encryption.
+
+No database (all in-memory).
+
+No file sharing or steganography detection.
+
+5. User Flow
+
+Start the server on Device 1 (or cloud).
+
+Get the server address:
+
+For LAN → http://<local-ip>:3000 (e.g., http://192.168.1.5:3000).
+
+For internet → use ngrok http 3000 to get a public URL (e.g., https://abcd123.ngrok.io).
+
+Open browser on Device 1 → log in as “Alice.”
+
+Open browser on Device 2 → log in as “Bob.”
+
+Alice sends a message → Bob receives instantly.
+
+Bob replies → Alice receives instantly.
+
+6. Technical Requirements
+6.1 Backend
+
+Node.js + Express + Socket.IO.
+
+Must listen on all network interfaces (0.0.0.0).
+
+Example:
+
+server.listen(3000, "0.0.0.0");
+
+6.2 Networking
+
+LAN setup: Both devices must be on the same Wi-Fi/router.
+
+Internet setup: Use ngrok/localtunnel OR deploy server to cloud hosting.
+
+6.3 Frontend
+
+Same as Stage 1 Option 1, but connect to server via:
+
+const socket = io("http://<server-ip>:3000"); 
+
+
+or with ngrok/public domain.
+
+7. Testing Strategy
+
+Case 1 (LAN):
+
+Device 1: Start server, get local IP with ipconfig (Windows) or ifconfig (Linux/Mac).
+
+Device 2: Open http://<Device1-IP>:3000.
+
+Verify messaging works.
+
+Case 2 (Internet):
+
+Run ngrok http 3000.
+
+Device 2 (anywhere in world): open given ngrok URL.
+
+Verify messaging works.
+
+8. Success Criteria
+
+✅ Two devices can connect to the same chat server.
+✅ Messages are delivered instantly across devices.
+✅ Chat UI remains responsive and functional.
+Stage 2: File Uploads & Sharing (ngrok-enabled)
+1. Objective
+
+Enable file uploads & sharing in the chat app, with ngrok exposing your local Node.js server to the internet so two users on different devices can send text + files in real time.
+
+2. Scope
+
+Use Multer in Node.js to handle file uploads.
+
+Store files locally in /uploads for now.
+
+Generate public file URLs via ngrok tunnel.
+
+Share these URLs in chat messages.
+
+Display inline previews for images, download links for docs.
+
+3. Features
+3.1 File Upload
+
+Add “Attach File” button in frontend.
+
+User selects file → sent to backend via REST API (/upload).
+
+3.2 File Storage
+
+Files saved locally in /uploads.
+
+When accessed via ngrok, URL looks like:
+
+https://<ngrok-subdomain>.ngrok-free.app/uploads/<filename>
+
+3.3 File Sharing
+
+Once uploaded, backend returns the public file URL.
+
+Socket.IO sends that URL as a chat message.
+
+Receiver sees:
+
+Image preview (if jpg/png/gif).
+
+Download link (if pdf/docx/xlsx).
+
+3.4 File Validation
+
+Allowed types: .jpg, .jpeg, .png, .gif, .pdf, .docx, .xlsx, .txt.
+
+File size limit: 25MB (configurable).
+
+4. Security Considerations
+
+Sanitize filenames (uuid instead of original names).
+
+Prevent .exe, .js, .php from uploading.
+
+Limit upload requests (rate-limiting middleware).
+
+Use temporary ngrok tunnel only for dev/testing.
+
+5. User Flow
+
+User clicks “Upload File”.
+
+File is validated and uploaded via API.
+
+Backend saves file → returns public URL (ngrok + /uploads/<id>).
+
+Chat app sends a Socket.IO message with that URL.
+
+Other users see the file (preview or download link).
+
+6. Technical Setup
+6.1 Backend
+
+Node.js + Express + Socket.IO
+
+Middleware: Multer for handling uploads
+
+Static hosting for /uploads:
+
+app.use('/uploads', express.static('uploads'));
+
+
+Return ngrok URL in response.
+
+6.2 Frontend
+
+Add file input (<input type="file">).
+
+On upload success → send file URL in chat.
+
+Show preview if image (use <img src="url" />).
+
+Show download link for docs.
+
+6.3 ngrok
+
+Run server on localhost:3000.
+
+Expose with:
+
+ngrok http 3000
+
+
+Share ngrok URL with second user (remote system).
+
+7. Testing Strategy
+
+Local test: Upload file → check if it appears in /uploads & URL works.
+
+Ngrok test: Open chat on another device using ngrok URL → upload + preview/download.
+
+File validation: Try invalid extensions → should reject.
+
+Large files: Upload >25MB → should reject with error.
+
+Multi-user test: User A uploads → User B sees instantly via socket event.
+
+8. Success Criteria
+
+✅ Users can upload files from different devices.
+✅ Files accessible via ngrok public link.
+✅ Images show inline preview.
+✅ Docs show as download links.
+✅ Validation & security checks work.

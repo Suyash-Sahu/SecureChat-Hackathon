@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Network</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Login Section -->
+        <div id="loginSection" class="login-section">
+            <div class="login-card">
+                <h1>Chat Network</h1>
+                <p>Enter a username to start chatting</p>
+                <div class="input-group">
+                    <input type="text" id="usernameInput" placeholder="Enter username..." maxlength="20">
+                    <button id="joinBtn" onclick="joinChat()">Join Chat</button>
+                </div>
+                <div id="loginError" class="error-message"></div>
+            </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div id="chatSection" class="chat-section hidden">
+            <div class="chat-header">
+                <div class="user-info">
+                    <span>Logged in as: <strong id="currentUser"></strong></span>
+                    <button id="logoutBtn" onclick="logout()" class="logout-btn">Logout</button>
+                </div>
+                <div class="online-users">
+                    <span>Online: <span id="userCount">0</span></span>
+                </div>
+            </div>
+
+            <div class="chat-container">
+                <div class="sidebar">
+                    <h3>Users Online</h3>
+                    <div id="userList" class="user-list"></div>
+                </div>
+                
+                <div class="chat-main">
+                    <div id="chatMessages" class="chat-messages"></div>
+                    
+                    <div class="message-input-container">
+                        <div class="recipient-selector">
+                            <label for="recipientSelect">To:</label>
+                            <select id="recipientSelect">
+                                <option value="">Select recipient...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="file-upload-section">
+                            <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.pdf,.docx,.xlsx,.txt" style="display: none;">
+                            <button id="attachBtn" onclick="document.getElementById('fileInput').click()" class="attach-btn">
+                                📎 Attach File
+                            </button>
+                            <button id="uploadBtn" onclick="uploadAndSendFile()" class="upload-btn" style="display: none;">
+                                📤 Send File
+                            </button>
+                            <span id="fileInfo" class="file-info"></span>
+                        </div>
+                        
+                        <div class="input-group">
+                            <input type="text" id="messageInput" placeholder="Type your message..." maxlength="500">
+                            <button id="sendBtn" onclick="sendMessage()">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
