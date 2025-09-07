@@ -1,0 +1,343 @@
+Stage: Stego test-corpus → Detector → Integration (full blueprint)
+Decide scope of formats & embedding techniques to test
+
+Start with the formats your app accepts / most likely used:
+
+Images: JPEG and PNG (most important).
+
+Documents: PDF and DOCX (embedded streams / metadata).
+
+Audio / Video (optional later): WAV/MP3 and MP4.
+
+Archives: zip/tar with hidden content inside files.
+
+Embedding methods to cover (representative):
+
+LSB (Least Significant Bit) and LSB-matching for images (PNG/JPEG).
+
+Transform-domain methods for JPEG (J-UNIWARD, HUGO, WOW) or simple DCT modifications.
+
+Metadata/covert streams in PDFs/Office (hidden attachments, embedded OLE streams).
+
+Container-based hiding (file appended to image, zip inside image).
+
+3 — Build a labeled test dataset (covers + stegos)
+
+You need covers (clean files) and corresponding stego files (same cover with hidden payload). Steps:
+
+3.1 Collect clean covers
+
+Take photos from multiple devices (phone, DSLR).
+
+Download diverse images (various sizes, natural scenes, flat surfaces).
+
+For PDFs/DOCs use real documents (invoices, reports) you own.
+
+Organize:
+
+dataset/
+  covers/images/
+  covers/pdfs/
+  payloads/          # small payload files to hide (txt small, binary small)
+  stego/images/
+  stego/pdfs/
+
+3.2 Choose stego generators (tools)
+
+Use a mix of mature open-source tools to create diverse stego:
+
+Steghide (image, audio) — commonly available.
+
+OpenStego — image stego, payload embedding.
+
+Outguess / stegseek — older but useful.
+
+Custom scripts for LSB/append methods (Python or C++).
+
+For PDFs/DOCX: use tools to embed attachments or create OLE objects (or script LibreOffice to embed a payload).
+
+For video/audio: use ffmpeg to manipulate LSB / embed small payloads into audio channels (optional).
+
+Note: If a tool isn’t available locally, implement simple LSB embedding in a small script (Python/Pillow) only for lab testcases.
+
+3.3 Generate stego variants
+
+For each cover, generate multiple stego variants:
+
+Different payload sizes (e.g., 0.1%, 1%, 5% payload relative to cover capacity).
+
+Different embedding algorithms.
+
+Different image qualities/quantization levels (for JPEG).
+
+With and without metadata.
+
+Label each sample: cover_id, generator, payload_size, stego=true/false.
+
+4 — Feature engineering & detection approaches
+
+Since your detector is C++ and not ML-based (you said), plan for rule/statistics-based detection:
+
+4.1 Useful features / checks (typical in stego detectors)
+
+LSB / Bit-plane statistics: analyze least-significant bit histograms for irregularities.
+
+Noise residuals: high-pass filter, measure residual correlations (SRM features).
+
+JPEG quantization anomalies: DCT coefficient distribution checks, double-compression traces.
+
+Image entropy / local entropy maps: unusually uniform or irregular patches.
+
+Chi-square / RS analysis: statistical tests to find LSB changes.
+
+Metadata presence: suspicious embedded payloads (attachments in PDF or OLE).
+
+File-length anomalies: appended extra bytes after EOF.
+
+Perceptual hash mismatch vs original (if you have original).
+
+Implement a pipeline that computes a vector of feature scores and then uses rule thresholds to decide stego/not. For C++ you can implement these efficiently using libraries:
+
+libjpeg / libpng for reading pixels / DCT coefficients.
+
+OpenCV for filters/residuals.
+
+Custom code for bit operations.
+
+4.2 Decision logic
+
+Single-threshold rules for specific detectors (e.g., RS test > T).
+
+Combine multiple tests into a scoring function (weighted sum).
+
+Optionally add a light ML classifier later using features (train offline in Python, port rules or thresholds to C++).
+
+5 — Implementing & testing the C++ detector (practical steps)
+5.1 Project layout (example)
+stegadetector/
+  src/
+    main.cpp          # CLI wrapper
+    detector.cpp
+    detector.h
+    jpeg_utils.cpp
+    png_utils.cpp
+    rs_analysis.cpp
+    features.cpp
+  build/
+  tests/
+  tools/
+
+5.2 Build & compile
+
+Use CMake to produce portable builds:
+
+cmake . && make or use gcc/g++ commands.
+
+Link with OpenCV or libjpeg as needed.
+
+5.3 CLI contract
+
+Make executable accept a filepath and print a standardized exit code / JSON:
+
+Exit code 0 = safe, 1 = stego detected, 2 = error.
+
+Or output JSON to stdout:
+
+{"path":"uploads/img1.jpg","stego":true,"score":0.87,"details":{"lsb_score":0.9,"rs_score":0.7}}
+
+5.4 Unit tests
+
+For each generator variant, run detection and assert expected result.
+
+Track false positives by running detector on covers (should be low).
+
+Create a small test harness script (Bash/Python) that iterates dataset and produces confusion matrix.
+
+6 — Evaluation: metrics, benchmark, thresholds
+
+For each detector run over labeled dataset compute:
+
+True Positive Rate (TPR) at several payload sizes.
+
+False Positive Rate (FPR) on covers.
+
+ROC curve / AUC (if using continuous score).
+
+Precision/Recall and F1.
+
+Latency: average detection time for file sizes (e.g., <10MB).
+
+Set operational thresholds:
+
+e.g., if score > 0.6 then block.
+Tune to meet business targets (e.g., FPR ≤ 1%, TPR ≥ 80% for payload ≥1%).
+
+7 — Integrate detector into Node.js upload pipeline
+7.1 Flow in backend (summary)
+
+User uploads file → Multer saves to tmp/ directory.
+
+Immediately spawn your C++ detector CLI (child process) with filepath.
+
+Parse returned JSON/exit code.
+
+If stego=true → reject upload, remove tmp file, log event, notify sender.
+
+Else → move file to permanent storage (S3/MinIO) and emit chat message.
+
+7.2 Node.js example (spawn + parse)
+const { spawn } = require('child_process');
+
+function checkStego(filePath) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('/opt/stegadetector/detect', [filePath]);
+
+    let out = '';
+    proc.stdout.on('data', (data) => out += data.toString());
+    proc.stderr.on('data', (d) => console.error('stego err:', d.toString()));
+
+    proc.on('close', (code) => {
+      if (code === 2) return reject(new Error('stego tool error'));
+      try {
+        // tool outputs JSON
+        const res = JSON.parse(out);
+        resolve(res);
+      } catch (e) {
+        // fallback: use exit code
+        resolve({ stego: code === 1, score: null });
+      }
+    });
+  });
+}
+
+// Usage inside /upload handler
+const res = await checkStego(tmpPath);
+if (res.stego) {
+  // block and notify
+} else {
+  // accept and forward
+}
+
+7.3 Performance considerations
+
+Spawning a process per upload is OK for low volume. For higher throughput:
+
+Create a pool of detector worker processes and send requests via IPC.
+
+Or wrap detector as a long-running microservice (gRPC / REST) to avoid spawn overhead.
+
+8 — Test harness & CI
+
+Add unit tests in your repo: run dataset samples through detector on every push.
+
+CI pipeline:
+
+Build C++ detector on CI (GitHub Actions).
+
+Run smoke tests on a small subset of dataset.
+
+Fail builds if FPR > threshold.
+
+9 — Monitoring, logging, admin controls
+
+Log every blocked file: userId, fileHash, fileName, timestamp, detectorScore, detectorDetails.
+
+Expose admin console to review quarantined files.
+
+Allow admin to override (release file) if false positive.
+
+Metric dashboards (Prometheus + Grafana) for:
+
+Number of scans / minute
+
+Blocked counts
+
+Average latency
+
+10 — Operational mitigations & UX
+
+If suspicious, show helpful message to user: “File blocked — suspected hidden data. Contact admin for review.” Avoid technical jargon.
+
+Quarantine flow: store blocked files in a secure quarantined bucket for admin review for a limited time (e.g., 7 days).
+
+Fallback sanitation: For images flagged as suspicious, you can optionally attempt to re-encode (sharp) and if sanitized image is visually acceptable, allow with warning — but do this only after admin policy confirmation.
+
+11 — Performance targets & scaling
+
+Start targets:
+
+Detection latency p50 < 1s for <=5MB; p95 < 5s for <=25MB.
+
+Handle concurrent scans by scaling worker instances or process pool.
+
+Scaling options:
+
+Horizontal: run multiple detector worker services behind a queue (Rabbit/Kafka) and scale with Kubernetes.
+
+Vertical: optimize C++ code, compile with optimizations, use SIMD for pixel ops.
+
+12 — Example schedule (practical)
+
+Week 1: Collect covers & generate stego dataset (LSB, appended, JPEG variants).
+
+Week 2: Implement C++ detector core features (LSB & RS test + JPEG checks).
+
+Week 3: Test detector, tune thresholds, build CLI, unit tests.
+
+Week 4: Integrate with Node.js, build upload pipeline, add logging & quarantine.
+
+Week 5: CI, admin UI for quarantined files, pilot with internal testers.
+
+Week 6: Tune, document, prepare for scale.
+
+13 — Acceptance criteria (concrete)
+
+Detector blocks ≥ 80% of stego samples at payload ≥1% while keeping FPR ≤ 1% on cover set.
+
+Average detection latency ≤ 3s for files ≤ 10MB on dev VM.
+
+All blocked uploads are logged and quarantined.
+
+Admin can view and release quarantined files.
+
+14 — Example commands & quick scripts
+Generate simple LSB stego (Python sample for lab testing only)
+
+(High-level only — do not distribute.)
+
+# idea: flip LSBs of pixels to embed a tiny payload
+from PIL import Image
+def lsb_embed(cover_path, payload_bytes, out_path):
+    img = Image.open(cover_path)
+    pixels = list(img.getdata())
+    bits = ''.join(f'{b:08b}' for b in payload_bytes)
+    # embed bits into LSBs of R channel across pixels...
+    # (implement small script)
+
+Run detector CLI on a file
+./detect /tmp/uploads/img1.jpg
+# outputs JSON, or exit code 1 if stego
+
+Node.js spawn example
+
+(See section 7.2 above.)
+
+15 — Future upgrades (beyond rule-based)
+
+Replace or complement rules with ML model trained on SRM residuals and CNNs (PyTorch). Export models to ONNX for faster inference in C++ or run an inference microservice.
+
+Add video/audio steganalysis (frame sampling + audio LSB checks).
+
+Integrate threat intel (blocklist of known-bad payload hashes).
+
+TL;DR — Concrete next immediate steps for you
+
+Create a small dataset: 200 cover images + 600 stego variants (different methods/payload sizes).
+
+Implement/compile your C++ detector CLI that takes a path and returns JSON {stego:bool,score:.}.
+
+Write a Node.js wrapper that calls the CLI on every upload and blocks/permits accordingly (example code above).
+
+Build test harness to compute TPR/FPR and tune thresholds.
+
+Add logging & quarantine and admin UI for review.

@@ -472,10 +472,20 @@ async function uploadAndSendFile() {
         });
         
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Upload failed with status:', response.status);
-            console.error('❌ Error response body:', errorText);
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
+            let serverMsg = 'Upload failed';
+            try {
+                const errJson = await response.json();
+                serverMsg = errJson && errJson.error ? errJson.error : serverMsg;
+            } catch (e) {
+                const errorText = await response.text();
+                serverMsg = errorText || serverMsg;
+            }
+            console.error('❌ Upload failed with status:', response.status, serverMsg);
+            showMessageError(serverMsg);
+            // Do not throw to avoid generic error duplication in UI
+            // Reset selection and return early
+            resetFileSelection();
+            return;
         }
         
         const result = await response.json();

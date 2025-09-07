@@ -15,6 +15,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
+const Jimp = require('jimp');
 
 const app = express();
 const server = http.createServer(app);
@@ -102,7 +103,7 @@ app.get('/test', (req, res) => {
 });
 
 // File upload endpoint
-app.post('/upload', upload.single('file'), (req, res) => {
+app.post('/upload', upload.single('file'), async (req, res) => {
 	console.log('=== FILE UPLOAD REQUEST START ===');
 	
 	try {
@@ -144,6 +145,54 @@ app.post('/upload', upload.single('file'), (req, res) => {
 			type: req.file.mimetype,
 			storedAs: req.file.filename
 		});
+
+		// If image, run LSB steganography detection before accepting
+		const isImage = req.file.mimetype && req.file.mimetype.startsWith('image/');
+		if (isImage) {
+			const filePath = req.file.path;
+			try {
+				const image = await Jimp.read(filePath);
+				const data = image.bitmap.data; // RGBA sequential
+				const bits = [];
+				for (let i = 0; i < data.length; i += 4) {
+					bits.push(data[i] & 1);     // R
+					bits.push(data[i + 1] & 1); // G
+					bits.push(data[i + 2] & 1); // B
+				}
+
+				const nBytes = Math.floor(bits.length / 8);
+				let message = '';
+				for (let b = 0; b < nBytes; b++) {
+					let val = 0;
+					for (let j = 0; j < 8; j++) {
+						val |= (bits[b * 8 + j] & 1) << (7 - j);
+					}
+					if (val === 0) break; // null terminator
+					if (val >= 32 && val <= 126) {
+						message += String.fromCharCode(val);
+						if (message.length > 2048) break; // cap length
+					} else {
+						break;
+					}
+				}
+
+				if (message.length > 0) {
+					try { fs.unlinkSync(filePath); } catch (e) {}
+					console.log('🛑 Image blocked due to suspected LSB payload');
+					return res.status(400).json({
+						error: 'Image blocked: suspected hidden data detected',
+						code: 'LSB_BLOCKED'
+					});
+				}
+			} catch (err) {
+				console.error('Error reading image for LSB detection:', err && err.message);
+				try { fs.unlinkSync(filePath); } catch (e) {}
+				return res.status(400).json({
+					error: 'Image could not be analyzed and was blocked',
+					code: 'LSB_ANALYSIS_FAILED'
+				});
+			}
+		}
 
 		// Get the current host and protocol
 		const host = req.get('host') || 'localhost:3000';
