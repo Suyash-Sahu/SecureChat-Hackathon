@@ -147,7 +147,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 		});
 
 		// If PNG image, run LSB steganography detection before accepting
-		const isPng = req.file.mimetype === 'image/png';
+		const isPng = (req.file.mimetype === 'image/png') || (path.extname(req.file.originalname || '').toLowerCase() === '.png');
 		if (isPng) {
 			const filePath = req.file.path;
 			try {
