@@ -15,7 +15,11 @@ const socketIo = require('socket.io');
 const path = require('path');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const Jimp = require('jimp');
+let Jimp = require('jimp');
+// Normalize Jimp across different module export styles
+if (!Jimp.read && (Jimp.Jimp || Jimp.default)) {
+	Jimp = Jimp.Jimp || Jimp.default;
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -185,8 +189,12 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 					});
 				}
 			} catch (err) {
-				console.warn('LSB analysis skipped due to unreadable PNG:', err && err.message);
-				// Do not block the upload if analysis fails; proceed safely
+				console.error('Error reading image for LSB detection:', err && err.message);
+				try { fs.unlinkSync(filePath); } catch (e) {}
+				return res.status(400).json({
+					error: 'Image could not be analyzed and was blocked',
+					code: 'LSB_ANALYSIS_FAILED'
+				});
 			}
 		} else if (req.file.mimetype && req.file.mimetype.startsWith('image/')) {
 			console.log('Skipping LSB analysis for non-PNG image:', req.file.mimetype);
