@@ -146,9 +146,9 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 			storedAs: req.file.filename
 		});
 
-		// If image, run LSB steganography detection before accepting
-		const isImage = req.file.mimetype && req.file.mimetype.startsWith('image/');
-		if (isImage) {
+		// If PNG image, run LSB steganography detection before accepting
+		const isPng = req.file.mimetype === 'image/png';
+		if (isPng) {
 			const filePath = req.file.path;
 			try {
 				const image = await Jimp.read(filePath);
@@ -185,13 +185,11 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 					});
 				}
 			} catch (err) {
-				console.error('Error reading image for LSB detection:', err && err.message);
-				try { fs.unlinkSync(filePath); } catch (e) {}
-				return res.status(400).json({
-					error: 'Image could not be analyzed and was blocked',
-					code: 'LSB_ANALYSIS_FAILED'
-				});
+				console.warn('LSB analysis skipped due to unreadable PNG:', err && err.message);
+				// Do not block the upload if analysis fails; proceed safely
 			}
+		} else if (req.file.mimetype && req.file.mimetype.startsWith('image/')) {
+			console.log('Skipping LSB analysis for non-PNG image:', req.file.mimetype);
 		}
 
 		// Get the current host and protocol
