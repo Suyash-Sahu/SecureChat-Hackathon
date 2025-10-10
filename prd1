@@ -1,0 +1,229 @@
+Product Requirements Document (PRD)
+Module: Authentication for Secure Chat Webapp
+1 — Overview
+
+The Authentication Module ensures that only verified users can access the secure chat system. It provides login, registration, session management, and secure user identity verification. This module serves as the foundation for all other modules (contacts, messaging, file sharing, presence, etc.).
+
+2 — Goals
+
+Allow users to securely register and log in.
+
+Maintain authenticated sessions with JWT or sessions.
+
+Protect all subsequent APIs (contacts, messaging, file sharing) via middleware.
+
+Enable easy integration with multi-device and socket-based real-time features.
+
+Ensure data privacy and security in user credentials and session tokens.
+
+3 — Functional Requirements
+Feature	Description	Priority
+User Registration	New users can create an account with username, email, and password. Passwords are hashed (bcrypt).	High
+User Login	Existing users can log in with email/username + password.	High
+Session Management	JWT issued on login, valid for a configurable period.	High
+Token Refresh	Optional refresh token endpoint for long-lived sessions.	Medium
+Password Recovery	Users can reset passwords via email verification.	Medium
+Secure API Access	All protected endpoints require JWT auth middleware.	High
+Rate Limiting	Prevent brute force login attempts.	Medium
+Input Validation	Ensure usernames, emails, and passwords meet format rules.	High
+4 — User Stories
+
+Registration
+
+As a new user, I want to create an account with a username, email, and password so I can log in later.
+
+Workflow:
+
+User sends POST /auth/signup with credentials.
+
+Backend validates input, hashes password, stores user in DB.
+
+Backend returns success with optional JWT.
+
+Login
+
+As a registered user, I want to log in securely so I can access the chat app.
+
+Workflow:
+
+User sends POST /auth/login with email/username and password.
+
+Backend validates credentials.
+
+If valid, backend issues JWT and returns user profile.
+
+Session Validation
+
+Every protected API (contacts, chat, files) checks for valid JWT via middleware.
+
+JWT expiry handled; optional refresh token endpoint.
+
+Password Reset
+
+Users can request a password reset link via email (POST /auth/password-reset).
+
+Link contains a time-limited token.
+
+User submits new password via POST /auth/password-reset/confirm.
+
+5 — Non-Functional Requirements
+
+Security:
+
+Passwords stored hashed (bcrypt/scrypt/argon2).
+
+JWT signed with strong secret key.
+
+HTTPS enforced.
+
+Rate-limiting login attempts.
+
+Scalability:
+
+Support thousands of concurrent sessions.
+
+Maintainability:
+
+Controllers, routes, validators, and middlewares separated.
+
+Performance:
+
+Login/registration response under 500ms (excluding email delays).
+
+6 — API Endpoints
+Method	Endpoint	Description	Auth Required
+POST	/auth/signup	Register new user	No
+POST	/auth/login	Login user	No
+POST	/auth/password-reset	Request reset link	No
+POST	/auth/password-reset/confirm	Set new password	No
+GET	/auth/profile	Get current user profile	Yes
+POST	/auth/refresh-token	Refresh JWT	Optional
+
+Example Request/Response
+
+POST /auth/signup
+
+{
+  "username": "john_doe",
+  "email": "john@example.com",
+  "password": "P@ssword123"
+}
+
+
+Success: 201 Created
+
+{
+  "message": "User registered successfully",
+  "user": { "id": "64b8e3f...", "username": "john_doe", "email": "john@example.com" },
+  "token": "<JWT_TOKEN>"
+}
+
+
+Error: 400 Bad Request (invalid input), 409 Conflict (email/username exists)
+
+POST /auth/login
+
+{
+  "email": "john@example.com",
+  "password": "P@ssword123"
+}
+
+
+Success: 200 OK
+
+{
+  "message": "Login successful",
+  "user": { "id": "64b8e3f...", "username": "john_doe", "email": "john@example.com" },
+  "token": "<JWT_TOKEN>"
+}
+
+
+Error: 401 Unauthorized (wrong password), 404 Not Found (user not found)
+
+7 — Database Design
+
+User Model (user.models.js)
+
+const mongoose = require("mongoose");
+const bcrypt = require("bcrypt");
+
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  profileImage: { type: String, default: null },
+  status: { type: String, enum: ["online", "offline"], default: "offline" }
+}, { timestamps: true });
+
+// Hash password before saving
+userSchema.pre("save", async function(next) {
+  if (this.isModified("password")) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+  next();
+});
+
+// Password validation
+userSchema.methods.isValidPassword = async function(password) {
+  return bcrypt.compare(password, this.password);
+};
+
+module.exports = mongoose.model("User", userSchema);
+
+8 — Middleware
+
+auth.middleware.js
+
+Extract JWT from Authorization header.
+
+Verify signature and expiry.
+
+Attach user object (req.user) to request.
+
+Reject unauthorized requests with 401.
+
+validator.middleware.js
+
+Validate registration/login input using Joi schema.
+
+9 — Integration Points
+
+Contacts: Use req.user.id for contact ownership.
+
+Messaging: Only allow sending messages if JWT valid.
+
+File Sharing: File upload endpoints require auth.
+
+Presence: Socket.IO connections verified via JWT token.
+
+10 — User Experience
+
+On signup/login success, JWT stored in client (localStorage/sessionStorage).
+
+Auto-login if JWT exists and valid.
+
+Clear error messages for invalid credentials or duplicate registration.
+
+Password reset link expires in configurable time (e.g., 15 minutes).
+
+11 — Security Considerations
+
+Use HTTPS for all endpoints.
+
+Store JWT secret securely in .env.
+
+Rate-limit login attempts per IP.
+
+Do not return password hashes in any API response.
+
+Optional: 2FA support for future enhancement.
+
+12 — Future Enhancements
+
+2FA/MFA for login.
+
+OAuth/social login integration (Google, Apple).
+
+Device management (active sessions view, revoke).
+
+Password strength meter on frontend.

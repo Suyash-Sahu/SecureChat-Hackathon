@@ -1,0 +1,259 @@
+1 — Key issues & suggested changes (prioritized)
+
+Use object identity that’s safe to expose
+
+Don’t use email or sequential IDs in client requests. Use opaque userId (Mongo _id) or UUID. Never return raw emails in public contact lists unless necessary. Add a publicProfile object to User to control exposed fields.
+
+Decide on relationship model: one-sided vs mutual
+
+You currently create Contact with status: accepted. Decide:
+
+Auto-accepted (WhatsApp-style): create single record userId -> contactId with status: accepted.
+
+Request/approval: create pending record and create reciprocal record only when accepted.
+
+I recommend starting with auto-accepted (faster to implement) then add pending if you want friend-request UX.
+
+Authorization checks everywhere
+
+Always confirm the authenticated req.user.id matches Contact.userId for delete/list operations — to prevent manipulation of other users’ contacts.
+
+Prevent user enumeration / privacy leak
+
+When adding a contact, do not reveal whether a given user exists through error messages. Use generic errors where appropriate (or rate-limited responses). But because contacts require that target exists, return 404 for not found — acceptable if you accept the privacy tradeoff. Consider a search endpoint requiring stronger rate-limiting.
+
+Rate limiting & abuse control
+
+Add rate limits on /contacts/add to prevent spam. Log repeated failed attempts.
+
+Indexes & pagination
+
+Add DB indexes on Contact.userId and Contact.contactId. Implement pagination for GET /contacts (limit & skip or cursor).
+
+Soft delete vs hard delete
+
+Consider soft delete (removedAt) for audit and undo. If GDPR concerns exist, support hard delete.
+
+Presence & Socket.IO events
+
+Standardize presence events and how status gets updated.
+
+Validation
+
+Validate contactId format (ObjectId) and self-add prevention.
+
+Rate / performance targets
+
+Add explicit pagination default (e.g., 50 contacts per request) and timeouts for presence updates.
+
+2 — Concrete API contracts (final, with edge behaviors)
+POST /contacts/add
+
+Request (JSON)
+
+{ "contactId": "64b8e3f..." }
+
+
+Responses:
+
+201 Created
+
+{ "message":"Contact added", "contact": { "id":"<contactRecordId>", "contactId":"<userId>" } }
+
+
+400 Bad Request — invalid ObjectId or trying to add yourself
+
+409 Conflict — already a contact
+
+404 Not Found — user not found
+
+429 Too Many Requests — rate limit exceeded
+
+Notes:
+
+Require Authorization: Bearer <JWT>.
+
+Server-side checks: contactId != req.user.id, user exists, contact not present.
+
+DELETE /contacts/:id
+
+:id = contact record id (not the contact's userId). Using record id ensures user can only delete their own contact (and prevents guessing).
+Responses:
+
+200 OK { "message":"Contact removed" }
+
+404 Not Found if record not found or not owned by the user
+
+GET /contacts?limit=50&cursor=<cursor>
+
+Default limit=50 (max 200).
+Response:
+
+200 OK array of objects:
+
+[
+  {
+    "contactId":"64b8e3f...",
+    "username":"alice",
+    "displayName":"Alice A.",
+    "avatarUrl":"/images/u64b8...png",
+    "status":"online",
+    "lastSeen":"2025-09-24T18:30:00Z",
+    "contactRecordId":"6423..."
+  },
+  ...
+]
+
+
+Notes:
+
+status derived in real-time from in-memory presence (Socket.IO). If offline, include lastSeen timestamp.
+
+Implement cursor-based pagination (return nextCursor).
+
+Optional: GET /contacts/search?q=alice
+
+Rate-limit heavily. Returns only public profile fields.
+
+3 — DB Schemas (concise, production-ready)
+
+User (user.models.js)
+
+const userSchema = new Schema({
+  username: { type: String, required: true, index: true, unique: true },
+  email: { type: String, required: true, unique: true, select: false }, // hide by default
+  displayName: { type: String },
+  avatarUrl: { type: String },
+  lastSeen: { type: Date },
+  publicProfile: {
+    about: String,
+    allowSearch: { type: Boolean, default: true }
+  }
+}, { timestamps: true });
+
+
+Contact (contact.models.js)
+
+const contactSchema = new Schema({
+  userId: { type: ObjectId, ref: "User", required: true, index: true },
+  contactId: { type: ObjectId, ref: "User", required: true, index: true },
+  status: { type: String, enum: ["accepted","pending","blocked"], default: "accepted" },
+  removedAt: { type: Date, default: null }
+}, { timestamps: true });
+
+contactSchema.index({ userId: 1, contactId: 1 }, { unique: true });
+
+
+Notes:
+
+Unique compound index prevents duplicate records.
+
+4 — Socket / Presence contract (server-side responsibilities)
+
+Socket.IO events:
+
+Client emits presence:online after connecting and authenticating socket (include token)
+
+Server emits presence:update to affected contacts:
+
+{ userId: "u1", status: "online", lastSeen: null }
+
+
+When socket disconnects: server sets lastSeen in DB and emits presence:update -> status: offline, lastSeen: <ts>.
+
+How to implement presence:
+
+Maintain in-memory Map<userId, Set<socketIds>> to support multi-device presence.
+
+Presence broadcast: when user goes online/offline, query their contacts list and emit only to those users (to minimize broadcasts).
+
+5 — Controller pseudocode (addContact)
+async function addContact(req, res) {
+  const userId = req.user.id;
+  const { contactId } = req.body;
+
+  if (!isValidObjectId(contactId)) return res.status(400).json({ error: 'invalid id' });
+  if (contactId === userId) return res.status(400).json({ error: 'cannot add yourself' });
+
+  const target = await User.findById(contactId).select('_id username displayName publicProfile');
+  if (!target) return res.status(404).json({ error: 'user not found' });
+
+  const exists = await Contact.findOne({ userId, contactId });
+  if (exists) return res.status(409).json({ error: 'already a contact' });
+
+  // Insert; if using auto-accept:
+  const contact = await Contact.create({ userId, contactId, status: 'accepted' });
+
+  // Optionally notify target via Socket.IO that they were added (only if privacy policy allows)
+  socketService.notifyUser(contactId, 'contact:added', { from: userId, username: req.user.username });
+
+  return res.status(201).json({ message: 'Contact added', contactRecordId: contact._id });
+}
+
+6 — Tests & Validation (what to cover)
+
+Unit tests
+
+Adding invalid contactId → 400
+
+Adding self → 400
+
+Adding non-existent user → 404
+
+Adding duplicate → 409
+
+Removing other user’s contact → 404/403
+
+Integration tests
+
+Fetch contacts after add → includes the newly added user
+
+Presence flow: simulate socket connect/disconnect and ensure presence:update events go to contacts only
+
+Load tests
+
+GET /contacts under 10k concurrent users; measure response times and DB query plans.
+
+7 — Logging & Monitoring (essential)
+
+Log attempts to add non-existent users with IP + timestamp (for abuse detection).
+
+Expose /health for CPU/memory and DB connection status.
+
+Track metrics: contacts added per minute, contact remove rate, rate-limit triggered count.
+
+8 — UX / Client hints (so frontend integrates cleanly)
+
+After login, call GET /contacts before rendering the chat UI.
+
+Keep a local cache of contacts with ETag; update via Socket.IO contact:updated events when contact is changed from other device.
+
+For the “To:” dropdown in the chat composer: show contacts (paginated or cached).
+
+Show presence via presence:update events; animate status changes smoothly.
+
+9 — Small additions worth implementing now
+
+Search user by username endpoint (rate-limited): allows adding contacts by searching.
+
+Block/Unblock: basic status: blocked in Contact model to prevent messages from blocked users.
+
+Contact avatars CDN: store avatar URLs instead of binary data.
+
+10 — Final checklist (ready-to-implement)
+
+ Choose relationship model (auto-accept or pending)
+
+ Add compound unique index: { userId, contactId }
+
+ Implement controllers with authorization checks
+
+ Implement Socket.IO presence map & events
+
+ Add pagination & query limits for GET /contacts
+
+ Add rate limit middleware on add/search endpoints
+
+ Add unit & integration tests
+
+ Add logging for abuse cases

@@ -1,48 +1,56 @@
-const fs = require('fs');
-// Load env vars from .env if present
-try {
-	if (fs.existsSync(require('path').join(__dirname, '.env'))) {
-		require('dotenv').config();
-		console.log('✅ Loaded environment variables from .env');
-	}
-} catch (e) {
-	console.warn('⚠️ Could not load .env:', e && e.message);
+import { existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join, extname } from 'path';
+import dotenv from 'dotenv';
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import { v4 as uuidv4 } from 'uuid';
+import * as Jimp from 'jimp';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load environment variables from .env if it exists
+if (existsSync(join(__dirname, '.env'))) {
+    dotenv.config();
+    console.log('✅ Loaded environment variables from .env');
 }
 
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const path = require('path');
-const multer = require('multer');
-const { v4: uuidv4 } = require('uuid');
-let Jimp = require('jimp');
 // Normalize Jimp across different module export styles
+let JimpInstance = Jimp;
 if (!Jimp.read && (Jimp.Jimp || Jimp.default)) {
-	Jimp = Jimp.Jimp || Jimp.default;
+    JimpInstance = Jimp.Jimp || Jimp.default;
 }
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+// Import the configured app from src/app.js
+import app from './src/app.js';
+const server = createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(','),
+    credentials: true
+  }
+});
 
 // Configure uploads directory (cloud-friendly)
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || join(__dirname, 'uploads');
 try {
-	if (!fs.existsSync(UPLOAD_DIR)) {
-		fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-		console.log(`📁 Created upload directory at: ${UPLOAD_DIR}`);
-	} else {
-		console.log(`📁 Using upload directory: ${UPLOAD_DIR}`);
-	}
+    if (!existsSync(UPLOAD_DIR)) {
+        import('fs').then(fs => {
+            fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+            console.log(`📁 Created upload directory at: ${UPLOAD_DIR}`);
+        });
+    } else {
+        console.log(`📁 Using upload directory: ${UPLOAD_DIR}`);
+    }
 } catch (e) {
-	console.error('Failed to prepare upload directory:', e);
+    console.error('Failed to prepare upload directory:', e);
 }
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Serve uploaded files
-app.use('/uploads', express.static(UPLOAD_DIR));
+// Static files and uploads are now handled in src/app.js
 
 // In-memory storage for active users and messages
 const activeUsers = new Map(); // socketId -> userInfo
@@ -56,7 +64,7 @@ const storage = multer.diskStorage({
 	filename: function (req, file, cb) {
 		// Generate unique filename with original extension
 		const uniqueName = uuidv4();
-		const extension = path.extname(file.originalname);
+        const extension = extname(file.originalname);
 		cb(null, uniqueName + extension);
 	}
 });
@@ -89,7 +97,7 @@ const upload = multer({
 
 // Serve the main page
 app.get('/', (req, res) => {
-	res.sendFile(path.join(__dirname, 'public', 'index.html'));
+	res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
 // Test endpoint to verify server is working
@@ -106,210 +114,36 @@ app.get('/test', (req, res) => {
 	});
 });
 
-// File upload endpoint
-app.post('/upload', upload.single('file'), async (req, res) => {
-	console.log('=== FILE UPLOAD REQUEST START ===');
-	
-	try {
-		// Log the entire request
-		console.log('📥 Upload request received at:', new Date().toISOString());
-		console.log('🔍 Request method:', req.method);
-		console.log('🔍 Request URL:', req.url);
-		console.log('🔍 Request headers:', JSON.stringify(req.headers, null, 2));
-		console.log('🔍 Request body keys:', Object.keys(req.body || {}));
-		console.log('🔍 Request file:', req.file ? {
-			fieldname: req.file.fieldname,
-			originalname: req.file.originalname,
-			encoding: req.file.encoding,
-			mimetype: req.file.mimetype,
-			size: req.file.size,
-			destination: req.file.destination,
-			filename: req.file.filename,
-			path: req.file.path
-		} : 'NO FILE');
+// File upload and other routes are now handled in src/app.js
 
-		// Check if file exists
-		if (!req.file) {
-			console.log('❌ No file in request - sending 400 error');
-			return res.status(400).json({ 
-				error: 'No file uploaded',
-				details: 'The request did not contain a file',
-				received: {
-					body: req.body,
-					headers: req.headers
-				}
-			});
-		}
-
-		// Validate file properties
-		console.log('✅ File validation passed');
-		console.log('📁 File details:', {
-			name: req.file.originalname,
-			size: req.file.size,
-			type: req.file.mimetype,
-			storedAs: req.file.filename
-		});
-
-		// If PNG image, run LSB steganography detection before accepting
-		const isPng = (req.file.mimetype === 'image/png') || (path.extname(req.file.originalname || '').toLowerCase() === '.png');
-		if (isPng) {
-			const filePath = req.file.path;
-			try {
-				const image = await Jimp.read(filePath);
-				const data = image.bitmap.data; // RGBA sequential
-				const bits = [];
-				for (let i = 0; i < data.length; i += 4) {
-					bits.push(data[i] & 1);     // R
-					bits.push(data[i + 1] & 1); // G
-					bits.push(data[i + 2] & 1); // B
-				}
-
-				const nBytes = Math.floor(bits.length / 8);
-				let message = '';
-				for (let b = 0; b < nBytes; b++) {
-					let val = 0;
-					for (let j = 0; j < 8; j++) {
-						val |= (bits[b * 8 + j] & 1) << (7 - j);
-					}
-					if (val === 0) break; // null terminator
-					if (val >= 32 && val <= 126) {
-						message += String.fromCharCode(val);
-						if (message.length > 2048) break; // cap length
-					} else {
-						break;
-					}
-				}
-
-				if (message.length > 0) {
-					try { fs.unlinkSync(filePath); } catch (e) {}
-					console.log('🛑 Image blocked due to suspected LSB payload');
-					return res.status(400).json({
-						error: 'Image blocked: suspected hidden data detected',
-						code: 'LSB_BLOCKED'
-					});
-				}
-			} catch (err) {
-				console.error('Error reading image for LSB detection:', err && err.message);
-				try { fs.unlinkSync(filePath); } catch (e) {}
-				return res.status(400).json({
-					error: 'Image could not be analyzed and was blocked',
-					code: 'LSB_ANALYSIS_FAILED'
-				});
-			}
-		} else if (req.file.mimetype && req.file.mimetype.startsWith('image/')) {
-			console.log('Skipping LSB analysis for non-PNG image:', req.file.mimetype);
-		}
-
-		// Get the current host and protocol
-		const host = req.get('host') || 'localhost:3000';
-		const protocol = req.get('x-forwarded-proto') || 'http';
-		
-		console.log('🌐 Host info:', { host, protocol });
-		
-		// Generate public file URL
-		const fileUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
-		console.log('🔗 Generated file URL:', fileUrl);
-		
-		// Return file information
-		const response = {
-			success: true,
-			file: {
-				originalName: req.file.originalname,
-				filename: req.file.filename,
-				size: req.file.size,
-				mimetype: req.file.mimetype,
-				url: fileUrl
-			}
-		};
-		
-		console.log('✅ Upload successful, sending response:', JSON.stringify(response, null, 2));
-		console.log('=== FILE UPLOAD REQUEST END ===');
-		
-		res.json(response);
-		
-	} catch (error) {
-		console.error('💥 CRITICAL UPLOAD ERROR:', error);
-		console.error('💥 Error stack:', error.stack);
-		console.error('💥 Error details:', {
-			name: error.name,
-			message: error.message,
-			code: error.code
-		});
-		console.log('=== FILE UPLOAD REQUEST END WITH ERROR ===');
-		
-		res.status(500).json({ 
-			error: 'Upload failed: ' + error.message,
-			details: error.stack,
-			timestamp: new Date().toISOString()
-		});
-	}
-});
-
-// Error handling for file uploads
-app.use((error, req, res, next) => {
-	console.log('=== ERROR HANDLING MIDDLEWARE ===');
-	console.log('🚨 Error caught in middleware:', error);
-	console.log('🚨 Error type:', error.constructor.name);
-	console.log('🚨 Error message:', error.message);
-	console.log('🚨 Error code:', error.code);
-	console.log('🚨 Request URL:', req.url);
-	console.log('🚨 Request method:', req.method);
-	
-	if (error instanceof multer.MulterError) {
-		console.log('🚨 Multer error detected');
-		if (error.code === 'LIMIT_FILE_SIZE') {
-			console.log('🚨 File size limit exceeded');
-			return res.status(400).json({ 
-				error: 'File too large. Maximum size is 25MB.',
-				details: `File size: ${error.field} bytes`,
-				code: error.code
-			});
-		}
-		if (error.code === 'LIMIT_FILE_COUNT') {
-			console.log('🚨 File count limit exceeded');
-			return res.status(400).json({ 
-				error: 'Too many files uploaded.',
-				details: `Maximum allowed: 1 file`,
-				code: error.code
-			});
-		}
-		if (error.code === 'LIMIT_UNEXPECTED_FILE') {
-			console.log('🚨 Unexpected file field');
-			return res.status(400).json({ 
-				error: 'Unexpected file field.',
-				details: `Field name: ${error.field}`,
-				code: error.code
-			});
-		}
-		console.log('🚨 Unknown multer error:', error.code);
-		return res.status(400).json({ 
-			error: 'File upload error',
-			details: error.message,
-			code: error.code
-		});
-	}
-	
-	if (error.message) {
-		console.log('🚨 General error with message');
-		return res.status(400).json({ 
-			error: error.message,
-			details: 'General upload error',
-			timestamp: new Date().toISOString()
-		});
-	}
-	
-	console.log('🚨 Unknown error, passing to next middleware');
-	next(error);
-});
+// Error handling is now handled in src/app.js
 
 // Socket.IO connection handling
+io.use((socket, next) => {
+  try {
+    const token = (socket.handshake.auth && socket.handshake.auth.token) || (socket.handshake.headers && (socket.handshake.headers['authorization'] || '').replace('Bearer ', ''));
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+        socket.user = { id: decoded._id, email: decoded.email, username: decoded.username };
+      } catch (e) {
+        // ignore invalid token – allow guest usage
+      }
+    }
+    return next();
+  } catch (e) {
+    return next();
+  }
+});
+
 io.on('connection', (socket) => {
 	console.log('New client connected:', socket.id);
 
 	// Handle user login
 	socket.on('userLogin', (username) => {
 		// Check if username is already taken
-		const isUsernameTaken = Array.from(activeUsers.values()).some(user => user.username === username);
+    const finalUsername = (socket.user && socket.user.username) || username;
+    const isUsernameTaken = Array.from(activeUsers.values()).some(user => user.username === finalUsername);
 		
 		if (isUsernameTaken) {
 			socket.emit('loginError', 'Username already taken');
@@ -317,8 +151,8 @@ io.on('connection', (socket) => {
 		}
 
 		// Store user information
-		activeUsers.set(socket.id, {
-			username: username,
+    activeUsers.set(socket.id, {
+      username: finalUsername,
 			socketId: socket.id,
 			connectedAt: new Date()
 		});
@@ -329,15 +163,15 @@ io.on('connection', (socket) => {
 		}
 
 		// Send login success and user list
-		socket.emit('loginSuccess', {
-			username: username,
+    socket.emit('loginSuccess', {
+      username: finalUsername,
 			users: Array.from(activeUsers.values()).map(user => user.username)
 		});
 
 		// Broadcast to other users that a new user joined
-		socket.broadcast.emit('userJoined', username);
-		
-		console.log(`User ${username} logged in`);
+    socket.broadcast.emit('userJoined', finalUsername);
+    
+    console.log(`User ${finalUsername} logged in`);
 	});
 
 	// Handle private messages

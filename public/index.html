@@ -8,16 +8,52 @@
 </head>
 <body>
     <div class="container">
-        <!-- Login Section -->
-        <div id="loginSection" class="login-section">
-            <div class="login-card">
-                <h1>Chat Network</h1>
-                <p>Enter a username to start chatting</p>
-                <div class="input-group">
-                    <input type="text" id="usernameInput" placeholder="Enter username..." maxlength="20">
-                    <button id="joinBtn" onclick="joinChat()">Join Chat</button>
+        <!-- Authentication Section -->
+        <div id="authSection" class="auth-section">
+            <div class="auth-card">
+                <h1>Secure Chat Network</h1>
+                
+                <!-- Login Form -->
+                <div id="loginForm" class="auth-form">
+                    <h2>Login</h2>
+                    <div class="input-group">
+                        <input type="email" id="loginEmail" placeholder="Email" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="loginPassword" placeholder="Password" required>
+                    </div>
+                    <button id="loginBtn" onclick="login()">Login</button>
+                    <p class="auth-switch">Don't have an account? <a href="#" onclick="showRegister()">Register</a></p>
+                    <p class="auth-switch"><a href="#" onclick="showForgotPassword()">Forgot Password?</a></p>
                 </div>
-                <div id="loginError" class="error-message"></div>
+
+                <!-- Register Form -->
+                <div id="registerForm" class="auth-form hidden">
+                    <h2>Register</h2>
+                    <div class="input-group">
+                        <input type="text" id="registerUsername" placeholder="Username" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="email" id="registerEmail" placeholder="Email" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="registerPassword" placeholder="Password" required>
+                    </div>
+                    <button id="registerBtn" onclick="register()">Register</button>
+                    <p class="auth-switch">Already have an account? <a href="#" onclick="showLogin()">Login</a></p>
+                </div>
+
+                <!-- Forgot Password Form -->
+                <div id="forgotPasswordForm" class="auth-form hidden">
+                    <h2>Forgot Password</h2>
+                    <div class="input-group">
+                        <input type="email" id="forgotEmail" placeholder="Email" required>
+                    </div>
+                    <button id="forgotBtn" onclick="forgotPassword()">Send Reset Email</button>
+                    <p class="auth-switch"><a href="#" onclick="showLogin()">Back to Login</a></p>
+                </div>
+
+                <div id="authError" class="error-message"></div>
             </div>
         </div>
 
@@ -26,6 +62,7 @@
             <div class="chat-header">
                 <div class="user-info">
                     <span>Logged in as: <strong id="currentUser"></strong></span>
+                    <button id="contactsBtn" class="contacts-btn">👥 Contacts</button>
                     <button id="logoutBtn" onclick="logout()" class="logout-btn">Logout</button>
                 </div>
                 <div class="online-users">
@@ -35,8 +72,45 @@
 
             <div class="chat-container">
                 <div class="sidebar">
-                    <h3>Users Online</h3>
-                    <div id="userList" class="user-list"></div>
+                    <div class="sidebar-tabs">
+                        <button id="onlineUsersTab" class="tab-btn active">Online</button>
+                        <button id="contactsTab" class="tab-btn">Contacts</button>
+                        <button id="requestsTab" class="tab-btn">Requests</button>
+                    </div>
+                    
+                    <div class="tab-content">
+                        <!-- Online Users Tab -->
+                        <div id="onlineUsersContent" class="tab-panel active">
+                            <h3>Users Online</h3>
+                            <div id="userList" class="user-list"></div>
+                        </div>
+                        
+                        <!-- Contacts Tab -->
+                        <div id="contactsContent" class="tab-panel">
+                            <div class="contacts-header">
+                                <h3>My Contacts</h3>
+                                <button id="addContactBtn" class="add-contact-btn">+ Add</button>
+                            </div>
+                            <div class="contacts-list">
+                                <ul id="contactsList"></ul>
+                            </div>
+                        </div>
+                        
+                        <!-- Friend Requests Tab -->
+                        <div id="requestsContent" class="tab-panel">
+                            <div class="requests-header">
+                                <h3>Friend Requests</h3>
+                                <div class="request-tabs">
+                                    <button id="incomingRequestsTab" class="request-tab-btn active">Incoming</button>
+                                    <button id="outgoingRequestsTab" class="request-tab-btn">Outgoing</button>
+                                </div>
+                            </div>
+                            <div class="requests-list">
+                                <ul id="incomingRequestsList"></ul>
+                                <ul id="outgoingRequestsList" class="hidden"></ul>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="chat-main">
@@ -65,6 +139,56 @@
                             <input type="text" id="messageInput" placeholder="Type your message..." maxlength="500">
                             <button id="sendBtn" onclick="sendMessage()">Send</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contact Management Modal -->
+        <div id="contactModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add Contact</h3>
+                    <button id="closeContactModal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="search-section">
+                        <input type="text" id="userSearchInput" placeholder="Search by username or email...">
+                        <button id="searchUsersBtn">Search</button>
+                    </div>
+                    <div id="searchResults" class="search-results"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Actions Modal -->
+        <div id="userActionsModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="userActionsTitle">User Actions</h3>
+                    <button id="closeUserActionsModal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="userActionsContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Report User Modal -->
+        <div id="reportModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Report User</h3>
+                    <button id="closeReportModal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="reportReason">Reason for reporting:</label>
+                        <textarea id="reportReason" placeholder="Please describe why you're reporting this user..." rows="4"></textarea>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="submitReportBtn" class="btn btn-danger">Submit Report</button>
+                        <button id="cancelReportBtn" class="btn btn-secondary">Cancel</button>
                     </div>
                 </div>
             </div>

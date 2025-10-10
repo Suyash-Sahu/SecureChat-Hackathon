@@ -1,6 +1,7 @@
 {
   "name": "chat-network",
   "version": "1.0.0",
+  "type": "module",
   "description": "A minimal chat network with real-time messaging using Socket.IO",
   "main": "server.js",
   "scripts": {
@@ -8,10 +9,18 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^4.18.2",
+    "express-validator": "^7.2.1",
     "jimp": "^1.6.0",
+    "jsonwebtoken": "^9.0.2",
+    "mailgen": "^2.0.30",
+    "mongoose": "^8.17.2",
     "multer": "^2.0.0-rc.3",
+    "nodemailer": "^7.0.5",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.1"
   },

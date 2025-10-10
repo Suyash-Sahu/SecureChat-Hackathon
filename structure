@@ -1,0 +1,74 @@
+secure-chat/
+├── node_modules/
+├── package-lock.json
+├── package.json
+├── readme.md
+├── public/
+│   ├── images/
+│   ├── index.html
+│   ├── styles.css
+│   └── script.js
+├── src/
+│   ├── app.js
+│   ├── index.js
+│
+│   ├── controllers/
+│   │   ├── auth.controller.js
+│   │   ├── healthCheck.controller.js
+│   │   ├── chat.controller.js
+│   │   ├── file.controller.js
+│   │   └── contact.controller.js
+│
+│   ├── database/
+│   │   └── index.js
+│
+│   ├── middlewares/
+│   │   ├── auth.middleware.js
+│   │   ├── validator.middleware.js
+│   │   ├── fileScan.middleware.js       # intercepts file before save
+│   │   └── messageScan.middleware.js    # intercepts text before delivery
+│
+│   ├── models/
+│   │   ├── user.models.js
+│   │   ├── chat.models.js
+│   │   └── file.models.js
+│
+│   ├── routes/
+│   │   ├── auth.routes.js
+│   │   ├── healthCheck.routes.js
+│   │   ├── chat.routes.js
+│   │   ├── file.routes.js
+│   │   └── contact.routes.js
+│
+│   ├── utils/
+│   │   ├── api-error.js
+│   │   ├── api-response.js
+│   │   ├── async-handler.js
+│   │   ├── constants.js
+│   │   ├── mail.js
+│   │   ├── logger.js
+│   │   └── encryption.js
+│
+│   ├── validators/
+│   │   ├── index.js
+│   │   ├── auth.validator.js
+│   │   ├── chat.validator.js
+│   │   └── file.validator.js
+│
+│   ├── services/
+│   │   ├── stego/
+│   │   │   ├── image.detector.js
+│   │   │   ├── pdf.detector.js
+│   │   │   ├── audio.detector.js
+│   │   │   └── video.detector.js
+│   │   ├── file.service.js
+│   │   ├── socket.service.js
+│   │   └── message.service.js
+│
+└── scripts/
+    ├── decoder-lsb.py                   # image stego detection
+    ├── pdf-analyzer.py                  # PDF scan
+    ├── audio-analyzer.py                # Audio stego scan
+    ├── video-analyzer.py                # Video scan
+    ├── start-ngrok.bat
+    └── start-ngrok.ps1
