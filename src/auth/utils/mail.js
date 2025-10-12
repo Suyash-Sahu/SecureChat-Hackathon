@@ -103,21 +103,44 @@ const sendEmail = async (options) => {
 };
 
 const emailVerificationMailContent = (username, verificationUrl) => {
+  // Extract OTP from verification URL
+  const otp = verificationUrl.split('otp=')[1];
+  
   return {
     body: {
       name: username,
-      intro: "Welcome to our App!",
+      intro: [
+        "Welcome to Secure Chat!",
+        "Here's your verification code:"
+      ],
+      // Display OTP in a large, easy-to-read format
+      table: {
+        data: [
+          {
+            otp: otp,
+            validity: "This code is valid for 10 minutes"
+          }
+        ],
+        columns: {
+          customWidth: {
+            otp: "60%",
+            validity: "40%"
+          }
+        }
+      },
+      // Keep the verification button as a fallback
       action: {
-        instructions:
-          "To verify your email please click on the following button",
+        instructions: "Or click the button below to verify your email:",
         button: {
           color: "#22BC66",
-          text: "Verify your email",
+          text: "Verify Email",
           link: verificationUrl,
         },
       },
-      outro:
-        "Need help, or have question? Just reply to this email, we'd love to help.",
+      outro: [
+        "If you didn't request this email, you can safely ignore it.",
+        "Need help? Just reply to this email, we'd love to help."
+      ]
     },
   };
 };

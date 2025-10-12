@@ -5,8 +5,79 @@ import { asyncHandler } from "../utils/async-handler.js"
 import { emailVerificationMailContent, forgotPasswordMailContent, sendEmail } from "../utils/mail.js"
 import jwt from "jsonwebtoken"
 import crypto from "crypto";
-import { generateNumericOtp, hashOtp, isCooldownActive, isExpired } from "../utils/otp.js";
+import { generateNumericOtp, hashOtp, isCooldownActive, isExpired, verifyOtp } from "../utils/otp.js";
 import { sendEmailOtp } from "../utils/sms.js";
+
+const verifyOtpHandler = asyncHandler(async (req, res) => {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+        throw new ApiError(400, "Email and OTP are required");
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+
+    // Check if email is already verified
+    if (user.isEmailVerified) {
+        return res.status(200).json(
+            new ApiResponse(200, { isEmailVerified: true }, "Email is already verified")
+        );
+    }
+
+    // Verify OTP
+    const isOtpValid = await verifyOtp(otp, user.emailOtp, user.emailOtpExpiry);
+    
+    if (!isOtpValid) {
+        // Increment failed attempts
+        user.emailOtpAttempts = (user.emailOtpAttempts || 0) + 1;
+        await user.save({ validateBeforeSave: false });
+        
+        throw new ApiError(400, "Invalid or expired OTP");
+    }
+
+    // Mark email as verified
+    user.isEmailVerified = true;
+    user.emailOtp = undefined;
+    user.emailOtpExpiry = undefined;
+    user.emailOtpAttempts = 0;
+    await user.save({ validateBeforeSave: false });
+
+    // Generate tokens
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(user._id);
+
+    // Get user data without sensitive information
+    const loggedInUser = await User.findById(user._id).select(
+        "-password -refreshToken -emailVerificationToken -emailVerificationExpiry"
+    );
+
+    const options = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    };
+
+    return res
+        .status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(
+            new ApiResponse(
+                200,
+                {
+                    user: loggedInUser,
+                    accessToken,
+                    refreshToken,
+                    isEmailVerified: true
+                },
+                "Email verified successfully"
+            )
+        );
+});
 
 
 const generateAccessAndRefreshToken = async (userID) => {
@@ -701,17 +772,18 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
         );
 });
 
-export { 
-    registerUser, 
-    login, 
-    logoutUser, 
-    getCurrentUser, 
-    verifyEmail, 
-    resendEmailVerification, 
-    refreshAccessToken, 
-    forgotPasswordRequest, 
-    resetForgotPassword, 
-    changeCurrentPassword, 
-    requestEmailOtp, 
-    verifyEmailOtp 
+export {
+    registerUser,
+    login,
+    logoutUser,
+    refreshAccessToken,
+    getCurrentUser,
+    changeCurrentPassword,
+    forgotPasswordRequest,
+    resetForgotPassword,
+    verifyEmail,
+    resendEmailVerification,
+    requestEmailOtp,
+    verifyEmailOtp,
+    verifyOtpHandler
 };

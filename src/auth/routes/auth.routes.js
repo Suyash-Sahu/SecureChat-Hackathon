@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { changeCurrentPassword, forgotPasswordRequest, getCurrentUser, login, logoutUser, refreshAccessToken, registerUser, resendEmailVerification, resetForgotPassword, verifyEmail, requestEmailOtp, verifyEmailOtp } from "../controllers/auth.controller.js"
+import { changeCurrentPassword, forgotPasswordRequest, getCurrentUser, login, logoutUser, refreshAccessToken, registerUser, resendEmailVerification, resetForgotPassword, verifyEmail, requestEmailOtp, verifyEmailOtp, verifyOtpHandler } from "../controllers/auth.controller.js"
 import {validate} from "../middlewares/validator.middleware.js"
 import { userChangeCurrentPasswordValidator, userForgotPasswordValidator, userRegisterValidator, userResetForgotPasswordValidator, userLoginValidator, userEmailOtpValidator, userVerifyEmailOtpValidator } from "../validators/index.js"
 import { verifyJWT } from "../middlewares/auth.middleware.js"
@@ -10,6 +10,7 @@ const router= Router()
 router.route("/register").post(userRegisterValidator(), validate, registerUser)
 router.route("/login").post(userLoginValidator(), validate, login)
 router.route("/verify-email/:verificationToken").get(verifyEmail)
+router.route("/verify-otp").post(verifyOtpHandler)
 router.route("/refresh-token").post(refreshAccessToken)
 router.route("/forgot-password").post(userForgotPasswordValidator(), validate, forgotPasswordRequest)
 router.route("/reset-password/:resetToken").post(userResetForgotPasswordValidator(), validate, resetForgotPassword )
