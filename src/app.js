@@ -8,6 +8,11 @@ import fileRouter from './routes/file.routes.js';
 import healthRouter from './routes/healthCheck.routes.js';
 import contactRouter from './routes/contact.routes.js';
 import { mountAuth } from './auth/mount.js';
+import { setCsrfCookie, verifyCsrfToken } from './middlewares/csrf.middleware.js';
+import helmet from 'helmet';
+import hpp from 'hpp';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -15,9 +20,24 @@ const __dirname = dirname(__filename);
 const app = express();
 
 // Core middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+    },
+  },
+}));
+app.use(hpp());
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(cookieParser());
+app.use(setCsrfCookie);
 
 // CORS
 app.use(
@@ -36,14 +56,27 @@ app.use(express.static(join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Routes
-app.use('/upload', fileRouter);
 app.use('/test', healthRouter);
+
+// Rate limiters for auth + OTP endpoints
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
+const otpLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+app.use('/api/v1/auth/login', authLimiter);
+app.use('/api/v1/auth/register', authLimiter);
+app.use('/api/v1/auth/refresh-token', authLimiter);
+app.use('/api/v1/auth/request-email-otp', otpLimiter);
+app.use('/api/v1/auth/verify-email-otp', otpLimiter);
+
+// Mount auth routes BEFORE CSRF (auth routes are entry points)
+// Note: mountAuth is async and will be handled in server.js
+// Apply CSRF verification for state-changing routes
+app.use(verifyCsrfToken);
+app.use('/upload', fileRouter);
 app.use('/contacts', contactRouter);
 import contactManagementRouter from './routes/contactManagement.routes.js';
 app.use('/api/v1/contacts', contactManagementRouter);
 
-// Mount auth routes
-mountAuth(app);
+// Auth routes already mounted above
 
 // Root
 app.get('/', (req, res) => {

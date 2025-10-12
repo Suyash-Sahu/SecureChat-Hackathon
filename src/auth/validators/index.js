@@ -48,4 +48,42 @@ const userResetForgotPasswordValidator = () => {
     ]
 }
 
-export { userRegisterValidator ,userLoginValidator,userChangeCurrentPasswordValidator,userForgotPasswordValidator,userResetForgotPasswordValidator};
+const userEmailOtpValidator = () => {
+    return [
+        body("email")
+            .trim()
+            .notEmpty()
+            .withMessage("Email is required")
+            .isEmail()
+            .withMessage("Email is invalid"),
+    ];
+};
+
+const userVerifyEmailOtpValidator = () => {
+    return [
+        body("email")
+            .trim()
+            .notEmpty()
+            .withMessage("Email is required")
+            .isEmail()
+            .withMessage("Email is invalid"),
+        body("otp")
+            .trim()
+            .notEmpty()
+            .withMessage("OTP is required")
+            .isLength({ min: 6, max: 6 })
+            .withMessage("OTP must be 6 digits")
+            .isNumeric()
+            .withMessage("OTP must contain only numbers"),
+    ];
+};
+
+export { 
+    userRegisterValidator,
+    userLoginValidator,
+    userChangeCurrentPasswordValidator,
+    userForgotPasswordValidator,
+    userResetForgotPasswordValidator,
+    userEmailOtpValidator,
+    userVerifyEmailOtpValidator
+};

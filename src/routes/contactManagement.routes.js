@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyJWT } from '../middlewares/auth.middleware.js';
+import { verifyJWT, requireEmailVerified } from '../middlewares/auth.middleware.js';
 import {
     searchUsers,
     sendFriendRequest,
@@ -17,7 +17,7 @@ import {
 const router = express.Router();
 
 // Apply JWT middleware to all routes
-router.use(verifyJWT);
+router.use(verifyJWT, requireEmailVerified);
 
 // Search users
 router.get('/search', searchUsers);

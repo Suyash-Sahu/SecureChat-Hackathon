@@ -23,12 +23,10 @@ const blockListSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Index for efficient queries
-blockListSchema.index({ userId: 1, blockedUserId: 1 });
-blockListSchema.index({ blockedUserId: 1 });
-
 // Prevent duplicate blocks
 blockListSchema.index({ userId: 1, blockedUserId: 1 }, { unique: true });
+// Query helper
+blockListSchema.index({ blockedUserId: 1 });
 
 const BlockList = mongoose.model('BlockList', blockListSchema);
 

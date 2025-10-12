@@ -30,6 +30,21 @@ const userSchema = new Schema(
             lowercase: true,
             trim: true,
         },
+        // Email OTP fields for registration and verification
+        emailOtp: {
+            type: String,
+            default: ""
+        },
+        emailOtpExpiry: {
+            type: Date
+        },
+        emailOtpAttempts: {
+            type: Number,
+            default: 0
+        },
+        emailOtpLastSentAt: {
+            type: Date
+        },
         fullName: {
             type: String,
             trim: true
@@ -41,6 +56,17 @@ const userSchema = new Schema(
         isEmailVerified: {
             type: Boolean,
             default: false
+        },
+        // Session/authorization
+        role: {
+            type: String,
+            enum: ["USER", "ADMIN", "PREMIUM_USER"],
+            default: "USER",
+            index: true
+        },
+        tokenVersion: {
+            type: Number,
+            default: 0
         },
         refreshToken: String,
         forgotPasswordToken: String,

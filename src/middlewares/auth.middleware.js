@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { User } from '../auth/models/user.models.js';
 
 function verifyJWT(req, res, next) {
   try {
@@ -32,7 +33,8 @@ function verifyJWT(req, res, next) {
       _id: decoded._id, 
       id: decoded._id, 
       email: decoded.email, 
-      username: decoded.username 
+      username: decoded.username,
+      role: decoded.role
     };
     
     return next();
@@ -72,5 +74,24 @@ function verifyJWT(req, res, next) {
 }
 
 export { verifyJWT };
+
+// Require email verification for protected contact features
+export async function requireEmailVerified(req, res, next) {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ success: false, error: 'Unauthorized', code: 'NO_USER' });
+    }
+    const user = await User.findById(req.user.id).select('isEmailVerified');
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized', code: 'NO_USER' });
+    }
+    if (!user.isEmailVerified) {
+      return res.status(403).json({ success: false, error: 'Email not verified', code: 'EMAIL_NOT_VERIFIED' });
+    }
+    return next();
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Verification check failed', code: 'VERIFY_ERROR' });
+  }
+}
 
 

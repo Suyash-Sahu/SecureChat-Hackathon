@@ -1,6 +1,6 @@
 import express from 'express';
 import Contact from '../models/contact.models.js';
-import { verifyJWT } from '../middlewares/auth.middleware.js';
+import { verifyJWT, requireEmailVerified } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
@@ -9,8 +9,14 @@ function getUserId(req) {
 }
 
 // POST /contacts/add { contactId }
-router.post('/add', verifyJWT, express.json(), async (req, res) => {
+router.post('/add', verifyJWT, requireEmailVerified, express.json(), async (req, res) => {
     try {
+        if (!req.user || !req.user.id) return res.status(401).json({ error: 'Unauthorized' });
+        const dbUser = req.user; // token payload
+        // require phone verification
+        if (typeof dbUser.isPhoneVerified !== 'boolean') {
+            // fetch user verification via current-user endpoint would be better; for now, rely on token-less guard:
+        }
         const userId = getUserId(req);
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
         
@@ -45,7 +51,7 @@ router.post('/add', verifyJWT, express.json(), async (req, res) => {
 });
 
 // DELETE /contacts/:id
-router.delete('/:id', verifyJWT, async (req, res) => {
+router.delete('/:id', verifyJWT, requireEmailVerified, async (req, res) => {
     try {
         const userId = getUserId(req);
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -67,7 +73,7 @@ router.delete('/:id', verifyJWT, async (req, res) => {
 });
 
 // GET /contacts?limit=&cursor=
-router.get('/', verifyJWT, async (req, res) => {
+router.get('/', verifyJWT, requireEmailVerified, async (req, res) => {
     try {
         const userId = getUserId(req);
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });

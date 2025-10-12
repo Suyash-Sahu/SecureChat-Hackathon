@@ -20,6 +20,7 @@ const authSection = document.getElementById('authSection');
 const chatSection = document.getElementById('chatSection');
 const loginForm = document.getElementById('loginForm');
 const registerForm = document.getElementById('registerForm');
+const otpForm = document.getElementById('otpForm');
 const forgotPasswordForm = document.getElementById('forgotPasswordForm');
 const authError = document.getElementById('authError');
 const currentUserSpan = document.getElementById('currentUser');
@@ -41,9 +42,35 @@ function isValidEmail(email) {
     return emailRegex.test(email);
 }
 
+function getCsrfTokenFromCookie() {
+    const match = document.cookie.match(/(?:^|; )csrfToken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+}
+
+function withAuthDefaults(options = {}) {
+    const headers = new Headers(options.headers || {});
+    const method = (options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+        const csrf = getCsrfTokenFromCookie();
+        if (csrf) headers.set('X-CSRF-Token', csrf);
+    }
+    // Default JSON content-type if body is plain object
+    const body = options.body;
+    const isFormData = (typeof FormData !== 'undefined') && body instanceof FormData;
+    if (body && !isFormData && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json');
+    }
+    return {
+        ...options,
+        headers,
+        credentials: 'include'
+    };
+}
+
 function fetchWithTimeout(url, options, timeout = 10000) {
+    const finalOptions = withAuthDefaults(options);
     return Promise.race([
-        fetch(url, options),
+        fetch(url, finalOptions),
         new Promise((_, reject) => 
             setTimeout(() => reject(new Error('TimeoutError')), timeout)
         )
@@ -184,6 +211,13 @@ function setupEventListeners() {
     document.getElementById('registerPassword').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             register();
+        }
+    });
+    
+    // Enter key in OTP form
+    document.getElementById('otpInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            verifyOtp();
         }
     });
     
@@ -804,24 +838,17 @@ async function login() {
         }
         
         // Validate response structure
-        if (!data.data.accessToken || !data.data.refreshToken || !data.data.user) {
+        if (!data.data || !data.data.user) {
             showAuthError('Invalid response from server');
             return;
         }
         
-        accessToken = data.data.accessToken;
-        refreshToken = data.data.refreshToken;
+        accessToken = '';
+        refreshToken = '';
         currentUser = data.data.user.username;
         
         // Save tokens to localStorage with error handling
-        try {
-            localStorage.setItem('accessToken', accessToken);
-            localStorage.setItem('refreshToken', refreshToken);
-        } catch (storageError) {
-            console.warn('Failed to save tokens to localStorage:', storageError);
-            showAuthError('Failed to save login session. Please try again.');
-            return;
-        }
+        // Cookies are set by server; no localStorage persistence required
         
         // Connect to chat
         connectToChat();
@@ -883,18 +910,150 @@ async function register() {
     }
     
     const registerBtn = document.getElementById('registerBtn');
-    const originalText = registerBtn.textContent;
+    const originalText = registerBtn.innerHTML;
     registerBtn.disabled = true;
-    registerBtn.textContent = 'Registering...';
+    registerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Registering...';
+    
+    // Clear any previous errors
+    clearAuthError();
+    
+    // Show a temporary processing message
+    const processingMessage = document.createElement('div');
+    processingMessage.className = 'alert alert-info';
+    processingMessage.innerHTML = '<i class="bi bi-info-circle me-2"></i>Creating your account, please wait...';
+    authError.appendChild(processingMessage);
+    
+    // Set a flag to track if we've shown success
+    let hasShownSuccess = false;
+    
+    // Set a timeout to show success after 5 seconds if the request is still pending
+    const successTimeout = setTimeout(() => {
+        if (!hasShownSuccess) {
+            processingMessage.innerHTML = '<i class="bi bi-check-circle me-2"></i>Almost done! Processing your registration...';
+            processingMessage.className = 'alert alert-info';
+        }
+    }, 5000);
     
     try {
-        const response = await fetchWithTimeout('/api/v1/auth/register', {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
+        const response = await fetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCsrfTokenFromCookie()
+            },
+            body: JSON.stringify({ 
+                username, 
+                email, 
+                password
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = getErrorMessage(response.status, errorData);
+            throw new Error(errorMessage);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success === false) {
+            throw new Error(data.message || 'Registration failed');
+        }
+        
+        // Store registration data for OTP verification
+        window.registrationData = { username, email };
+        
+        // Mark success
+        hasShownSuccess = true;
+        
+        // Show success message
+        showAuthError('Registration successful! Please check your email for the verification code.', 'success');
+        
+        // Show OTP form after a short delay
+        setTimeout(() => {
+            showOtpForm();
+        }, 1000);
+        
+    } catch (error) {
+        logError('Registration', error, { username, email });
+        
+        // Remove processing message
+        if (processingMessage.parentNode === authError) {
+            authError.removeChild(processingMessage);
+        }
+        
+        // Show appropriate error message
+        if (error.name === 'AbortError' || error.message === 'TimeoutError') {
+            // The request took too long, but it might have succeeded on the server
+            showAuthError('Registration is taking longer than expected. Please check your email for a verification link.', 'info');
+            
+            // Store the email for OTP verification in case the request actually succeeded
+            window.registrationData = { username, email };
+            
+            // Show OTP form after a delay
+            setTimeout(() => {
+                showOtpForm();
+            }, 1000);
+        } else {
+            showAuthError(error.message || 'An error occurred during registration. Please try again.');
+        }
+    } finally {
+        // Clean up
+        clearTimeout(successTimeout);
+        registerBtn.disabled = false;
+        registerBtn.innerHTML = originalText;
+        
+        // Remove processing message after a delay if it's still there
+        setTimeout(() => {
+            if (processingMessage.parentNode === authError) {
+                authError.removeChild(processingMessage);
+            }
+        }, 5000);
+    }
+}
+
+// OTP Verification Functions
+async function verifyOtp() {
+    const otp = document.getElementById('otpInput').value.trim();
+    
+    if (!otp || otp.length !== 6) {
+        showAuthError('Please enter a valid 6-digit code');
+        return;
+    }
+    
+    if (!/^\d{6}$/.test(otp)) {
+        showAuthError('OTP must contain only numbers');
+        return;
+    }
+    
+    if (!window.registrationData) {
+        showAuthError('Registration data not found. Please register again.');
+        showRegister();
+        return;
+    }
+    
+    const verifyBtn = document.getElementById('verifyOtpBtn');
+    const originalText = verifyBtn.textContent;
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = 'Verifying...';
+    
+    try {
+        const response = await fetchWithTimeout('/api/v1/auth/verify-email-otp', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ username, email, password })
-        }, 15000); // 15 second timeout for registration
+            body: JSON.stringify({ 
+                email: window.registrationData.email,
+                otp: otp
+            })
+        }, 10000);
         
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
@@ -906,25 +1065,82 @@ async function register() {
         const data = await response.json();
         
         if (data.success === false) {
-            showAuthError(data.message || 'Registration failed');
+            showAuthError(data.message || 'OTP verification failed');
             return;
         }
         
-        showAuthError('Registration successful! You can now log in.', 'success');
+        // Clear registration data
+        window.registrationData = null;
+        
+        showAuthError('Email verified successfully! You can now log in.', 'success');
         showLogin();
         
     } catch (error) {
-        logError('Registration', error, { username, email });
+        logError('OTP Verification', error);
         if (error.name === 'TimeoutError') {
-            showAuthError('Registration timed out. Please try again.');
+            showAuthError('Verification timed out. Please try again.');
         } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
             showAuthError('Cannot connect to server. Please check your internet connection.');
         } else {
             showAuthError('An unexpected error occurred. Please try again.');
         }
     } finally {
-        registerBtn.disabled = false;
-        registerBtn.textContent = originalText;
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = originalText;
+    }
+}
+
+async function resendOtp() {
+    if (!window.registrationData) {
+        showAuthError('Registration data not found. Please register again.');
+        showRegister();
+        return;
+    }
+    
+    const resendBtn = document.getElementById('resendOtpBtn');
+    const originalText = resendBtn.textContent;
+    resendBtn.disabled = true;
+    resendBtn.textContent = 'Sending...';
+    
+    try {
+        const response = await fetchWithTimeout('/api/v1/auth/request-email-otp', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                email: window.registrationData.email
+            })
+        }, 10000);
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = getErrorMessage(response.status, errorData);
+            showAuthError(errorMessage);
+            return;
+        }
+        
+        const data = await response.json();
+        
+        if (data.success === false) {
+            showAuthError(data.message || 'Failed to resend OTP');
+            return;
+        }
+        
+        showAuthError('New verification code sent!', 'success');
+        
+    } catch (error) {
+        logError('Resend OTP', error);
+        if (error.name === 'TimeoutError') {
+            showAuthError('Request timed out. Please try again.');
+        } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            showAuthError('Cannot connect to server. Please check your internet connection.');
+        } else {
+            showAuthError('An unexpected error occurred. Please try again.');
+        }
+    } finally {
+        resendBtn.disabled = false;
+        resendBtn.textContent = originalText;
     }
 }
 
@@ -1032,25 +1248,13 @@ async function attemptTokenRefresh() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ refreshToken })
+            }
         }, 5000);
         
         if (response.ok) {
             const data = await response.json();
-            if (data.data && data.data.accessToken) {
-                accessToken = data.data.accessToken;
-                refreshToken = data.data.refreshToken || refreshToken;
-                
-                // Save new tokens
-                try {
-                    localStorage.setItem('accessToken', accessToken);
-                    localStorage.setItem('refreshToken', refreshToken);
-                } catch (storageError) {
-                    logError('Token Storage', storageError);
-                }
-                
-                // Retry connection
+            if (data.data) {
+                // Cookies updated by server; retry connection
                 connectToChat();
             } else {
                 throw new Error('Invalid refresh response');
@@ -1087,6 +1291,7 @@ function connectToChat() {
             auth: {
                 token: accessToken
             },
+            withCredentials: true,
             timeout: 10000,
             forceNew: true
         });
@@ -1104,6 +1309,7 @@ function connectToChat() {
 function showLogin() {
     loginForm.classList.remove('hidden');
     registerForm.classList.add('hidden');
+    otpForm.classList.add('hidden');
     forgotPasswordForm.classList.add('hidden');
     authSection.classList.remove('hidden');
     chatSection.classList.add('hidden');
@@ -1114,14 +1320,25 @@ function showLogin() {
 function showRegister() {
     loginForm.classList.add('hidden');
     registerForm.classList.remove('hidden');
+    otpForm.classList.add('hidden');
     forgotPasswordForm.classList.add('hidden');
     clearAuthError();
     document.getElementById('registerUsername').focus();
 }
 
+function showOtpForm() {
+    loginForm.classList.add('hidden');
+    registerForm.classList.add('hidden');
+    otpForm.classList.remove('hidden');
+    forgotPasswordForm.classList.add('hidden');
+    clearAuthError();
+    document.getElementById('otpInput').focus();
+}
+
 function showForgotPassword() {
     loginForm.classList.add('hidden');
     registerForm.classList.add('hidden');
+    otpForm.classList.add('hidden');
     forgotPasswordForm.classList.remove('hidden');
     clearAuthError();
     document.getElementById('forgotEmail').focus();
@@ -1212,6 +1429,13 @@ function setupSocketListeners() {
         // If socket login fails, disconnect and show auth
         socket.disconnect();
         showLogin();
+    });
+
+    // Global auth errors
+    socket.on('connect_error', (err) => {
+        if (err && (err.message === 'AUTH_REQUIRED' || err.message === 'INVALID_TOKEN' || err.message === 'AUTH_FAILED')) {
+            showAuthError('Authentication required. Please log in again.');
+        }
     });
     
     // New message received

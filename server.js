@@ -6,6 +6,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import cookie from 'cookie';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import * as Jimp from 'jimp';
@@ -27,6 +28,8 @@ if (!Jimp.read && (Jimp.Jimp || Jimp.default)) {
 
 // Import the configured app from src/app.js
 import app from './src/app.js';
+import connectDB from './src/auth/database/index.js';
+import { mountAuth } from './src/auth/mount.js';
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
@@ -121,18 +124,31 @@ app.get('/test', (req, res) => {
 // Socket.IO connection handling
 io.use((socket, next) => {
   try {
-    const token = (socket.handshake.auth && socket.handshake.auth.token) || (socket.handshake.headers && (socket.handshake.headers['authorization'] || '').replace('Bearer ', ''));
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-        socket.user = { id: decoded._id, email: decoded.email, username: decoded.username };
-      } catch (e) {
-        // ignore invalid token – allow guest usage
-      }
+    // Try auth.token first
+    let token = (socket.handshake.auth && socket.handshake.auth.token) || '';
+    // Try Authorization header
+    if (!token && socket.handshake.headers) {
+      const authHeader = socket.handshake.headers['authorization'] || '';
+      if (authHeader.startsWith('Bearer ')) token = authHeader.replace('Bearer ', '');
     }
+    // Try cookie
+    if (!token && socket.handshake.headers && socket.handshake.headers.cookie) {
+      const cookies = cookie.parse(socket.handshake.headers.cookie || '');
+      if (cookies && cookies.accessToken) token = cookies.accessToken;
+    }
+
+    if (!token) {
+      return next(new Error('AUTH_REQUIRED'));
+    }
+
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    if (!decoded || !decoded._id || !decoded.username) {
+      return next(new Error('INVALID_TOKEN'));
+    }
+    socket.user = { id: decoded._id, email: decoded.email, username: decoded.username };
     return next();
   } catch (e) {
-    return next();
+    return next(new Error('AUTH_FAILED'));
   }
 });
 
@@ -253,16 +269,40 @@ io.on('connection', (socket) => {
 	socket.emit('userList', Array.from(activeUsers.values()).map(user => user.username));
 });
 
-const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0'; // Listen on all network interfaces
+// Start server with database connection
+const startServer = async () => {
+    try {
+        console.log('🚀 Starting Secure Chat Server...\n');
+        
+        // Connect to MongoDB first
+        console.log('📊 Connecting to database...');
+        await connectDB();
+        
+        // Mount auth routes
+        console.log('🔐 Mounting authentication routes...');
+        await mountAuth(app);
+        
+        // Start the server
+        const PORT = process.env.PORT || 3000;
+        const HOST = '0.0.0.0'; // Listen on all network interfaces
+        
+        server.listen(PORT, HOST, () => {
+            console.log(`\n🎉 Server started successfully!`);
+            console.log(`🚀 Server running on port ${PORT}`);
+            console.log(`📍 Local access: http://localhost:${PORT}`);
+            console.log(`🌐 Network access: http://0.0.0.0:${PORT}`);
+            console.log(`📁 Upload dir: ${UPLOAD_DIR}`);
+            console.log('\n📱 For multi-device testing:');
+            console.log('   • LAN: Use your device\'s local IP address');
+            console.log('   • Internet: Use ngrok or deploy to cloud hosting');
+            console.log('\n💡 Get your local IP with: ipconfig (Windows) or ifconfig (Linux/Mac)');
+        });
+        
+    } catch (error) {
+        console.error('❌ Failed to start server:', error.message);
+        process.exit(1);
+    }
+};
 
-server.listen(PORT, HOST, () => {
-	console.log(`🚀 Server running on port ${PORT}`);
-	console.log(`📍 Local access: http://localhost:${PORT}`);
-	console.log(`🌐 Network access: http://0.0.0.0:${PORT}`);
-	console.log(`📁 Upload dir: ${UPLOAD_DIR}`);
-	console.log('\n📱 For multi-device testing:');
-	console.log('   • LAN: Use your device\'s local IP address');
-	console.log('   • Internet: Use ngrok or deploy to cloud hosting');
-	console.log('\n💡 Get your local IP with: ipconfig (Windows) or ifconfig (Linux/Mac)');
-});
+// Start the server
+startServer();

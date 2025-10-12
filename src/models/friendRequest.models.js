@@ -28,13 +28,12 @@ const friendRequestSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Index for efficient queries
-friendRequestSchema.index({ fromUserId: 1, toUserId: 1 });
+// Indexes
+// Prevent duplicate requests between same pair
+friendRequestSchema.index({ fromUserId: 1, toUserId: 1 }, { unique: true });
+// Query helpers
 friendRequestSchema.index({ toUserId: 1, status: 1 });
 friendRequestSchema.index({ fromUserId: 1, status: 1 });
-
-// Prevent duplicate requests
-friendRequestSchema.index({ fromUserId: 1, toUserId: 1 }, { unique: true });
 
 const FriendRequest = mongoose.model('FriendRequest', friendRequestSchema);
 

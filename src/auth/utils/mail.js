@@ -2,41 +2,103 @@ import Mailgen from "mailgen";
 import nodemailer from "nodemailer";
 
 const sendEmail = async (options) => {
-  const mailGenerator = new Mailgen({
-    theme: "default",
-    product: {
-      name: "Task manager",
-      link: "https;//taskmanagelink.com",
-    },
-  });
-
-  const emailTextual = mailGenerator.generatePlaintext(options.mailgenContent);
-  const emailHtml = mailGenerator.generate(options.mailgenContent);
-
-  const transpoter = nodemailer.createTransport({
-    host: process.env.MAILTRAP_SMTP_HOST,
-    port: process.env.MAILTRAP_SMTP_PORT,
-    auth: {
-      user: process.env.MAILTRAP_SMTP_USER,
-      pass: process.env.MAILTRAP_SMTP_PASS,
-    },
-  });
-
-  const mail = {
-    from: "mail.taskmanage@example.com",
-    to: options.email,
-    subject: options.subject,
-    text: emailTextual,
-    html: emailHtml,
-  };
-
+  console.log('Preparing to send email to:', options.email);
+  
   try {
-    await transpoter.sendMail(mail);
+    // Verify required environment variables
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      throw new Error('Email configuration is incomplete. Please check your .env file for EMAIL_USER and EMAIL_PASS.');
+    }
+
+    const mailGenerator = new Mailgen({
+      theme: 'default',
+      product: {
+        name: 'Secure Chat',
+        link: 'http://your-app-url.com',
+      },
+    });
+
+    // Generate email content
+    const emailTextual = mailGenerator.generatePlaintext(options.mailgenContent);
+    const emailHtml = mailGenerator.generate(options.mailgenContent);
+
+    console.log('Creating transporter with user:', process.env.EMAIL_USER);
+    
+    // Configure transporter with Gmail SMTP using explicit settings
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // true for 465, false for other ports
+      requireTLS: true,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      },
+      tls: {
+        // Do not fail on invalid certs
+        rejectUnauthorized: false
+      },
+      debug: true,
+      logger: true
+    });
+
+    // Verify connection configuration
+    await transporter.verify((error, success) => {
+      if (error) {
+        console.error('SMTP Connection Error:', error);
+        throw new Error(`SMTP Connection failed: ${error.message}`);
+      } else {
+        console.log('Server is ready to take our messages');
+      }
+    });
+
+    const mailOptions = {
+      from: `"Secure Chat" <${process.env.EMAIL_USER}>`,
+      to: options.email,
+      subject: options.subject || 'No Subject',
+      text: emailTextual,
+      html: emailHtml,
+    };
+
+    console.log('Sending email with options:', {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject
+    });
+
+    // Send the email
+    const info = await transporter.sendMail(mailOptions);
+    
+    console.log('Email sent successfully:', {
+      messageId: info.messageId,
+      accepted: info.accepted,
+      rejected: info.rejected,
+      pending: info.pending,
+      response: info.response
+    });
+
+    return info;
   } catch (error) {
-    console.error(
-      "Email service failed silently. make sure that you have provided you mailtrap credential in .env file",
-    );
-    console.error("Error:", error);
+    console.error('Email sending failed:', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode,
+      responseMessage: error.responseMessage
+    });
+    
+    // Provide more specific error messages for common issues
+    if (error.code === 'EAUTH') {
+      throw new Error('Authentication failed. Please check your email credentials.');
+    } else if (error.code === 'ECONNECTION') {
+      throw new Error('Could not connect to the email server. Please check your internet connection.');
+    } else if (error.code === 'EENVELOPE') {
+      throw new Error('Invalid email address. Please check the recipient email.');
+    }
+    
+    throw new Error(`Failed to send email: ${error.message}`);
   }
 };
 

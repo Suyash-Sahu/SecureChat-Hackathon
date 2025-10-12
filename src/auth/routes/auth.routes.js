@@ -1,7 +1,7 @@
 import { Router } from "express"
-import { changeCurrentPassword, forgotPasswordRequest, getCurrentUser, login, logoutUser, refreshAccessToken, registerUser, resendEmailVerification, resetForgotPassword, verifyEmail } from "../controllers/auth.controller.js"
+import { changeCurrentPassword, forgotPasswordRequest, getCurrentUser, login, logoutUser, refreshAccessToken, registerUser, resendEmailVerification, resetForgotPassword, verifyEmail, requestEmailOtp, verifyEmailOtp } from "../controllers/auth.controller.js"
 import {validate} from "../middlewares/validator.middleware.js"
-import { userChangeCurrentPasswordValidator, userForgotPasswordValidator, userRegisterValidator, userResetForgotPasswordValidator, userLoginValidator } from "../validators/index.js"
+import { userChangeCurrentPasswordValidator, userForgotPasswordValidator, userRegisterValidator, userResetForgotPasswordValidator, userLoginValidator, userEmailOtpValidator, userVerifyEmailOtpValidator } from "../validators/index.js"
 import { verifyJWT } from "../middlewares/auth.middleware.js"
 
 
@@ -13,6 +13,10 @@ router.route("/verify-email/:verificationToken").get(verifyEmail)
 router.route("/refresh-token").post(refreshAccessToken)
 router.route("/forgot-password").post(userForgotPasswordValidator(), validate, forgotPasswordRequest)
 router.route("/reset-password/:resetToken").post(userResetForgotPasswordValidator(), validate, resetForgotPassword )
+
+// email/otp
+router.route("/request-email-otp").post(userEmailOtpValidator(), validate, requestEmailOtp)
+router.route("/verify-email-otp").post(userVerifyEmailOtpValidator(), validate, verifyEmailOtp)
 
 
 
