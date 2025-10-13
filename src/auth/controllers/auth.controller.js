@@ -99,127 +99,196 @@ const registerUser = asyncHandler(async (req, res) => {
         console.log('Registration attempt with data:', req.body);
         const { email, username, password, role, phone, phoneCountryCode } = req.body;
 
-        // Input validation
+        // Enhanced validation
         if (!email || !username || !password) {
-            throw new ApiError(400, "Email, username, and password are required");
+            throw new ApiError(400, "Email, username, and password are required")
+        }
+
+        if (typeof email !== 'string' || typeof username !== 'string' || typeof password !== 'string') {
+            throw new ApiError(400, "Invalid input format")
         }
 
         // Email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            throw new ApiError(400, "Invalid email format");
+        if (email.length > 254) {
+            throw new ApiError(400, "Email too long")
         }
 
-        // Check if user already exists
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(email)) {
+            throw new ApiError(400, "Invalid email format")
+        }
+
+        // Username validation
+        if (username.length < 3) {
+            throw new ApiError(400, "Username must be at least 3 characters long")
+        }
+
+        if (username.length > 20) {
+            throw new ApiError(400, "Username must be less than 20 characters")
+        }
+
+        if (!/^[a-z0-9_]+$/.test(username)) {
+            throw new ApiError(400, "Username can only contain lowercase letters, numbers, and underscores")
+        }
+
+        // Password validation
+        if (password.length < 6) {
+            throw new ApiError(400, "Password must be at least 6 characters long")
+        }
+
+        if (password.length > 128) {
+            throw new ApiError(400, "Password too long")
+        }
+
+        // Check for existing user
         const existedUser = await User.findOne({
             $or: [{ username }, { email }]
-        });
+        })
 
         if (existedUser) {
             if (existedUser.email === email) {
-                throw new ApiError(409, "Email already registered");
+                throw new ApiError(409, "Email already registered")
             } else {
-                throw new ApiError(409, "Username already taken");
+                throw new ApiError(409, "Username already taken")
             }
         }
 
-        // Create new user
+        // Create user as inactive by default
         const user = await User.create({
-    email,
-    password,
-    username,
-    role: (role && role.toUpperCase()) || "USER", // Ensure role is uppercase
-    phone: phone || "",
-    phoneCountryCode: phoneCountryCode || "",
-    isEmailVerified: false,
-    isActive: false,
-    emailOtp: "",
-    emailOtpExpiry: null,
-    emailOtpAttempts: 0,
-    emailOtpLastSentAt: null
-});
+            email,
+            password,
+            username,
+            isEmailVerified: false,
+            isActive: false, // User is inactive until email is verified
+            phone: phone || undefined,
+            phoneCountryCode: phoneCountryCode || ""
+        })
 
         if (!user) {
             throw new ApiError(500, "Failed to create user");
         }
 
-        // Generate OTP and set expiry (10 minutes)
+        // Generate and send verification OTP
         const otp = generateNumericOtp(6);
-        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
-
-        // Update user with OTP details
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+        
+        // Save OTP hash to user
         user.emailOtp = hashOtp(otp);
         user.emailOtpExpiry = otpExpiry;
         user.emailOtpLastSentAt = new Date();
         user.emailOtpAttempts = 0;
-
+        
         try {
             await user.save({ validateBeforeSave: false });
+
+            // Create verification URL with OTP
+            const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?email=${encodeURIComponent(user.email)}&otp=${otp}`;
             
-            // Send OTP email
-            await sendEmailOtp({
-                to: user.email,
-                otp: otp,
-                username: user.username
-            });
+            // Prepare email content using the emailVerificationMailContent helper
+            const emailContent = {
+                email: user.email,
+                subject: 'Verify Your Email - Secure Chat',
+                mailgenContent: emailVerificationMailContent(
+                    user.username,
+                    verificationUrl
+                )
+            };
 
-            console.log('Verification OTP sent successfully');
-
-            // Return success response
-            const createdUser = await User.findById(user._id).select("-password -refreshToken -emailOtp -emailOtpExpiry -emailOtpAttempts -emailOtpLastSentAt");
-
-            return res
-                .status(201)
-                .json(
-                    new ApiResponse(
-                        201,
-                        { user: createdUser },
-                        "Registration successful! Please check your email for the verification OTP."
-                    )
-                );
-
+            console.log('Sending verification email to:', user.email);
+            await sendEmail(emailContent);
+            console.log('Verification email sent successfully');
+            
         } catch (error) {
-            console.error('Error sending OTP:', {
+            console.error('Error during registration:', {
                 message: error.message,
                 stack: error.stack,
-                code: error.code
+                code: error.code,
+                response: error.response,
+                request: error.config ? {
+                    url: error.config.url,
+                    method: error.config.method,
+                    headers: error.config.headers,
+                    data: error.config.data
+                } : 'No request config',
+                fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
             });
-
-            // Clean up user if OTP sending fails
-            await User.findByIdAndDelete(user._id);
             
-            throw new ApiError(500, 'Failed to send verification OTP. Please try again later.');
+            // More specific error messages based on error type
+            if (error.code === 'EAUTH' || error.responseCode) {
+                // Even if email fails, we still create the user and let them request OTP later
+                console.log('Email failed but user created successfully. User can request OTP later.');
+                const createdUser = await User.findById(user._id).select(
+                    "-password -refreshToken -emailVerificationToken -emailVerificationExpiry"
+                )
+
+                if (!createdUser) {
+                    throw new ApiError(500, "Failed to retrieve created user")
+                }
+
+                return res
+                    .status(201)
+                    .json(
+                        new ApiResponse(
+                            201,
+                            { user: createdUser },
+                            "User registered successfully. Please check your email for the verification code, or request a new one if you don't receive it."
+                        )
+                    )
+            }
+            
+            throw new ApiError(500, 'Failed to complete registration. Please try again.');
         }
 
+        const createdUser = await User.findById(user._id).select(
+            "-password -refreshToken -emailVerificationToken -emailVerificationExpiry"
+        )
+
+        if (!createdUser) {
+            throw new ApiError(500, "Failed to retrieve created user")
+        }
+
+        return res
+            .status(201)
+            .json(
+                new ApiResponse(
+                    201,
+                    { user: createdUser },
+                    "User registered successfully. Please verify your email with the OTP sent."
+                )
+            )
     } catch (error) {
         console.error('Registration error:', {
             message: error.message,
             stack: error.stack,
             name: error.name,
-            code: error.code
+            code: error.code,
+            keyValue: error.keyValue
         });
-
-        // Handle duplicate key errors
+        
+        // Handle duplicate key errors (MongoDB)
         if (error.name === 'MongoServerError' && error.code === 11000) {
             const field = Object.keys(error.keyValue)[0];
             throw new ApiError(409, `${field} '${error.keyValue[field]}' is already registered`);
         }
-
+        
         // Handle validation errors
         if (error.name === 'ValidationError') {
             const messages = Object.values(error.errors).map(val => val.message);
             throw new ApiError(400, `Validation failed: ${messages.join(', ')}`);
         }
-
-        // Re-throw if it's already an ApiError
+        
         if (error instanceof ApiError) {
             throw error;
         }
-
-        // Default error
-        throw new ApiError(500, error.message || 'Registration failed. Please try again.');
+        
+        // Return a more detailed error in development
+        const errorMessage = process.env.NODE_ENV === 'development' 
+            ? `Registration failed: ${error.message}`
+            : 'Server error. Please try again later.';
+            
+        throw new ApiError(500, errorMessage);
     }
-});
+})
 
 // OTP: request email verification code
 const requestEmailOtp = asyncHandler(async (req, res) => {
@@ -250,9 +319,23 @@ const requestEmailOtp = asyncHandler(async (req, res) => {
     user.emailOtpExpiry = new Date(Date.now() + TTL_MS);
     user.emailOtpLastSentAt = new Date();
     user.emailOtpAttempts = 0; // reset on new code
-    await user.save({ validateBeforeSave: false });
+    
+    try {
+        await user.save({ validateBeforeSave: false });
+    } catch (saveError) {
+        console.error('Failed to save user OTP data:', saveError);
+        throw new ApiError(500, 'Failed to update user data. Please try again.');
+    }
 
-    await sendEmailOtp({ to: email, otp, username: user.username });
+    try {
+        await sendEmailOtp({ to: email, otp, username: user.username });
+        console.log(`OTP successfully queued for email: ${email}`);
+    } catch (emailError) {
+        console.error('Failed to send OTP email:', emailError);
+        // Even if email fails, we still return success to the client
+        // because the OTP is generated and saved successfully
+        return res.status(200).json(new ApiResponse(200, {}, 'OTP generated successfully. If you do not receive the email, please check your spam folder or try again.'));
+    }
 
     return res.status(200).json(new ApiResponse(200, {}, 'OTP sent successfully to your email'));
 });
@@ -384,18 +467,24 @@ const login = asyncHandler(async (req, res) => {
                 user.emailOtp = hashOtp(otp);
                 user.emailOtpExpiry = otpExpiry;
                 user.emailOtpLastSentAt = new Date();
-                await user.save({ validateBeforeSave: false });
                 
-                // Send the new OTP via email
-                await sendEmail({
-                    email: user.email,
-                    subject: 'New Verification Code - Secure Chat',
-                    mailgenContent: emailVerificationMailContent(
-                        user.username,
-                        otp,
-                        '10 minutes'
-                    )
-                });
+                try {
+                    await user.save({ validateBeforeSave: false });
+                    
+                    // Send the new OTP via email
+                    await sendEmail({
+                        email: user.email,
+                        subject: 'New Verification Code - Secure Chat',
+                        mailgenContent: emailVerificationMailContent(
+                            user.username,
+                            otp,
+                            '10 minutes'
+                        )
+                    });
+                } catch (saveError) {
+                    console.error('Failed to save user or send OTP during login:', saveError);
+                    // Continue with login flow even if OTP sending fails
+                }
             }
             
             throw new ApiError(403, "Please verify your email before logging in. A new verification code has been sent to your email.");
