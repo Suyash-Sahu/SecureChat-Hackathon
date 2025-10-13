@@ -125,10 +125,7 @@ const sendEmail = async (options) => {
   }
 };
 
-const emailVerificationMailContent = (username, verificationUrl) => {
-  // Extract OTP from verification URL
-  const otp = verificationUrl.split('otp=')[1];
-  
+const emailVerificationMailContent = (username, otp) => {
   return {
     body: {
       name: username,
@@ -150,15 +147,6 @@ const emailVerificationMailContent = (username, verificationUrl) => {
             validity: "40%"
           }
         }
-      },
-      // Keep the verification button as a fallback
-      action: {
-        instructions: "Or click the button below to verify your email:",
-        button: {
-          color: "#22BC66",
-          text: "Verify Email",
-          link: verificationUrl,
-        },
       },
       outro: [
         "If you didn't request this email, you can safely ignore it.",

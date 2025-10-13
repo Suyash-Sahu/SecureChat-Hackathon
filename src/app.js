@@ -59,8 +59,39 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/test', healthRouter);
 
 // Rate limiters for auth + OTP endpoints
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
-const otpLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+// More scalable rate limiting configuration
+const authLimiter = rateLimit({ 
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true, 
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many authentication requests from this IP, please try again later.",
+    code: "TOO_MANY_REQUESTS"
+  }
+});
+
+// Per-key rate limiting for OTP requests to allow more concurrent users
+const otpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 5, // Limit each email/IP to 5 OTP requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use email as key for OTP requests if available, otherwise use IP
+    if (req.body && req.body.email) {
+      return req.body.email;
+    }
+    return req.ip;
+  },
+  message: {
+    success: false,
+    message: "Too many OTP requests. Please wait before requesting another code.",
+    code: "TOO_MANY_OTP_REQUESTS"
+  }
+});
+
 app.use('/api/v1/auth/login', authLimiter);
 app.use('/api/v1/auth/register', authLimiter);
 app.use('/api/v1/auth/refresh-token', authLimiter);
@@ -101,5 +132,3 @@ app.use((error, req, res, next) => {
 });
 
 export default app;
-
-

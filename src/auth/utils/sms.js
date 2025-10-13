@@ -13,7 +13,7 @@ export async function sendEmailOtp({ to, otp, username }) {
             subject: 'Your Email Verification Code',
             mailgenContent: emailVerificationMailContent(
                 username || 'User',
-                `${process.env.FRONTEND_URL || 'http://localhost:3000'}?otp=${otp}`
+                otp // Pass only the OTP, not a verification URL
             )
         };
 
@@ -30,5 +30,3 @@ export async function sendEmailOtp({ to, otp, username }) {
         throw new Error(`Failed to send email OTP: ${error.message}`);
     }
 }
-
-

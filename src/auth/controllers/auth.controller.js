@@ -181,16 +181,13 @@ const registerUser = asyncHandler(async (req, res) => {
         try {
             await user.save({ validateBeforeSave: false });
 
-            // Create verification URL with OTP
-            const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?email=${encodeURIComponent(user.email)}&otp=${otp}`;
-            
             // Prepare email content using the emailVerificationMailContent helper
             const emailContent = {
                 email: user.email,
                 subject: 'Verify Your Email - Secure Chat',
                 mailgenContent: emailVerificationMailContent(
                     user.username,
-                    verificationUrl
+                    otp // Pass only the OTP, not a verification URL
                 )
             };
 
@@ -277,6 +274,11 @@ const registerUser = asyncHandler(async (req, res) => {
             throw new ApiError(400, `Validation failed: ${messages.join(', ')}`);
         }
         
+        // Handle rate limit errors
+        if (error.name === 'TooManyRequestsError' || (error.code && error.code === 'TOO_MANY_REQUESTS')) {
+            throw new ApiError(429, "Too many registration requests. Please wait a moment and try again.");
+        }
+        
         if (error instanceof ApiError) {
             throw error;
         }
@@ -311,7 +313,9 @@ const requestEmailOtp = asyncHandler(async (req, res) => {
     const TTL_MS = 10 * 60 * 1000;
 
     if (isCooldownActive(user.emailOtpLastSentAt, COOLDOWN_MS)) {
-        throw new ApiError(429, 'OTP recently sent. Please wait before requesting again');
+        // More informative error message
+        const timeRemaining = Math.ceil((COOLDOWN_MS - (Date.now() - new Date(user.emailOtpLastSentAt).getTime())) / 1000);
+        throw new ApiError(429, `Please wait ${timeRemaining} seconds before requesting another OTP`);
     }
 
     const otp = generateNumericOtp(6);
@@ -477,8 +481,7 @@ const login = asyncHandler(async (req, res) => {
                         subject: 'New Verification Code - Secure Chat',
                         mailgenContent: emailVerificationMailContent(
                             user.username,
-                            otp,
-                            '10 minutes'
+                            otp // Pass only the OTP, not a verification URL
                         )
                     });
                 } catch (saveError) {
@@ -530,6 +533,12 @@ const login = asyncHandler(async (req, res) => {
             );
     } catch (error) {
         console.error('Login error:', error);
+        
+        // Handle rate limit errors specifically
+        if (error.name === 'TooManyRequestsError' || (error.code && error.code === 'TOO_MANY_REQUESTS')) {
+            throw new ApiError(429, "Too many login attempts. Please wait a moment and try again.");
+        }
+        
         if (error instanceof ApiError) {
             throw error;
         }
