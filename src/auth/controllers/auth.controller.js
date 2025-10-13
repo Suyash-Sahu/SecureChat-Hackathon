@@ -99,178 +99,127 @@ const registerUser = asyncHandler(async (req, res) => {
         console.log('Registration attempt with data:', req.body);
         const { email, username, password, role, phone, phoneCountryCode } = req.body;
 
-        // Enhanced validation
+        // Input validation
         if (!email || !username || !password) {
-            throw new ApiError(400, "Email, username, and password are required")
-        }
-
-        if (typeof email !== 'string' || typeof username !== 'string' || typeof password !== 'string') {
-            throw new ApiError(400, "Invalid input format")
+            throw new ApiError(400, "Email, username, and password are required");
         }
 
         // Email validation
-        if (email.length > 254) {
-            throw new ApiError(400, "Email too long")
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
-            throw new ApiError(400, "Invalid email format")
+            throw new ApiError(400, "Invalid email format");
         }
 
-        // Username validation
-        if (username.length < 3) {
-            throw new ApiError(400, "Username must be at least 3 characters long")
-        }
-
-        if (username.length > 20) {
-            throw new ApiError(400, "Username must be less than 20 characters")
-        }
-
-        if (!/^[a-z0-9_]+$/.test(username)) {
-            throw new ApiError(400, "Username can only contain lowercase letters, numbers, and underscores")
-        }
-
-        // Password validation
-        if (password.length < 6) {
-            throw new ApiError(400, "Password must be at least 6 characters long")
-        }
-
-        if (password.length > 128) {
-            throw new ApiError(400, "Password too long")
-        }
-
-        // Check for existing user
+        // Check if user already exists
         const existedUser = await User.findOne({
             $or: [{ username }, { email }]
-        })
+        });
 
         if (existedUser) {
             if (existedUser.email === email) {
-                throw new ApiError(409, "Email already registered")
+                throw new ApiError(409, "Email already registered");
             } else {
-                throw new ApiError(409, "Username already taken")
+                throw new ApiError(409, "Username already taken");
             }
         }
 
-        // Create user as inactive by default
+        // Create new user
         const user = await User.create({
-            email,
-            password,
-            username,
-            isEmailVerified: false,
-            isActive: false, // User is inactive until email is verified
-            phone: phone || undefined,
-            phoneCountryCode: phoneCountryCode || ""
-        })
+    email,
+    password,
+    username,
+    role: (role && role.toUpperCase()) || "USER", // Ensure role is uppercase
+    phone: phone || "",
+    phoneCountryCode: phoneCountryCode || "",
+    isEmailVerified: false,
+    isActive: false,
+    emailOtp: "",
+    emailOtpExpiry: null,
+    emailOtpAttempts: 0,
+    emailOtpLastSentAt: null
+});
 
         if (!user) {
             throw new ApiError(500, "Failed to create user");
         }
 
-        // Generate and send verification OTP
+        // Generate OTP and set expiry (10 minutes)
         const otp = generateNumericOtp(6);
-        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
-        
-        // Save OTP hash to user
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+        // Update user with OTP details
         user.emailOtp = hashOtp(otp);
         user.emailOtpExpiry = otpExpiry;
         user.emailOtpLastSentAt = new Date();
         user.emailOtpAttempts = 0;
-        
+
         try {
             await user.save({ validateBeforeSave: false });
-
-            // Create verification URL with OTP
-            const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?email=${encodeURIComponent(user.email)}&otp=${otp}`;
             
-            // Prepare email content using the emailVerificationMailContent helper
-            const emailContent = {
-                email: user.email,
-                subject: 'Verify Your Email - Secure Chat',
-                mailgenContent: emailVerificationMailContent(
-                    user.username,
-                    verificationUrl
-                )
-            };
+            // Send OTP email
+            await sendEmailOtp({
+                to: user.email,
+                otp: otp,
+                username: user.username
+            });
 
-            console.log('Sending verification email to:', user.email);
-            await sendEmail(emailContent);
-            console.log('Verification email sent successfully');
-            
+            console.log('Verification OTP sent successfully');
+
+            // Return success response
+            const createdUser = await User.findById(user._id).select("-password -refreshToken -emailOtp -emailOtpExpiry -emailOtpAttempts -emailOtpLastSentAt");
+
+            return res
+                .status(201)
+                .json(
+                    new ApiResponse(
+                        201,
+                        { user: createdUser },
+                        "Registration successful! Please check your email for the verification OTP."
+                    )
+                );
+
         } catch (error) {
-            console.error('Error during registration:', {
+            console.error('Error sending OTP:', {
                 message: error.message,
                 stack: error.stack,
-                code: error.code,
-                response: error.response,
-                request: error.config ? {
-                    url: error.config.url,
-                    method: error.config.method,
-                    headers: error.config.headers,
-                    data: error.config.data
-                } : 'No request config',
-                fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+                code: error.code
             });
+
+            // Clean up user if OTP sending fails
+            await User.findByIdAndDelete(user._id);
             
-            // More specific error messages based on error type
-            if (error.code === 'EAUTH' || error.responseCode) {
-                throw new ApiError(500, 'Failed to send verification email. Please try again later.');
-            }
-            
-            throw new ApiError(500, 'Failed to complete registration. Please try again.');
+            throw new ApiError(500, 'Failed to send verification OTP. Please try again later.');
         }
 
-        const createdUser = await User.findById(user._id).select(
-            "-password -refreshToken -emailVerificationToken -emailVerificationExpiry"
-        )
-
-        if (!createdUser) {
-            throw new ApiError(500, "Failed to retrieve created user")
-        }
-
-        return res
-            .status(201)
-            .json(
-                new ApiResponse(
-                    201,
-                    { user: createdUser },
-                    "User registered successfully. Please verify your email with the OTP sent."
-                )
-            )
     } catch (error) {
         console.error('Registration error:', {
             message: error.message,
             stack: error.stack,
             name: error.name,
-            code: error.code,
-            keyValue: error.keyValue
+            code: error.code
         });
-        
-        // Handle duplicate key errors (MongoDB)
+
+        // Handle duplicate key errors
         if (error.name === 'MongoServerError' && error.code === 11000) {
             const field = Object.keys(error.keyValue)[0];
             throw new ApiError(409, `${field} '${error.keyValue[field]}' is already registered`);
         }
-        
+
         // Handle validation errors
         if (error.name === 'ValidationError') {
             const messages = Object.values(error.errors).map(val => val.message);
             throw new ApiError(400, `Validation failed: ${messages.join(', ')}`);
         }
-        
+
+        // Re-throw if it's already an ApiError
         if (error instanceof ApiError) {
             throw error;
         }
-        
-        // Return a more detailed error in development
-        const errorMessage = process.env.NODE_ENV === 'development' 
-            ? `Registration failed: ${error.message}`
-            : 'Server error. Please try again later.';
-            
-        throw new ApiError(500, errorMessage);
+
+        // Default error
+        throw new ApiError(500, error.message || 'Registration failed. Please try again.');
     }
-})
+});
 
 // OTP: request email verification code
 const requestEmailOtp = asyncHandler(async (req, res) => {
