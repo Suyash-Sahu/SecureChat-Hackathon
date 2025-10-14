@@ -44,7 +44,26 @@ const userForgotPasswordValidator = () => {
 
 const userResetForgotPasswordValidator = () => {
     return [
-        body("newPassword").notEmpty().withMessage("Password is required"),
+        body("email")
+            .trim()
+            .notEmpty()
+            .withMessage("Email is required")
+            .isEmail()
+            .withMessage("Email is invalid"),
+        body("otp")
+            .trim()
+            .notEmpty()
+            .withMessage("OTP is required")
+            .isLength({ min: 6, max: 6 })
+            .withMessage("OTP must be 6 digits")
+            .isNumeric()
+            .withMessage("OTP must contain only numbers"),
+        body("newPassword")
+            .trim()
+            .notEmpty()
+            .withMessage("New password is required")
+            .isLength({ min: 6 })
+            .withMessage("Password must be at least 6 characters long")
     ]
 }
 

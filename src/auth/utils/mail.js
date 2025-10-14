@@ -111,6 +111,7 @@ const sendEmail = async (options) => {
   try {
     // Verify required environment variables
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn('Email configuration is incomplete. Please check your .env file for EMAIL_USER and EMAIL_PASS.');
       throw new Error('Email configuration is incomplete. Please check your .env file for EMAIL_USER and EMAIL_PASS.');
     }
 
@@ -156,22 +157,30 @@ const emailVerificationMailContent = (username, otp) => {
   };
 };
 
-const forgotPasswordMailContent = (username, passwordResetUrl) => {
+const forgotPasswordMailContent = (username, otp) => {
   return {
     body: {
       name: username,
-      intro: "We got the request to reset the password of your account",
-      action: {
-        instructions:
-          "To reset you password please click on the following button or link",
-        button: {
-          color: "#22BC66",
-          text: "Reset password",
-          link: passwordResetUrl,
-        },
+      intro: "We received a request to reset your password.",
+      table: {
+        data: [
+          {
+            "Reset Code": otp,
+            "Valid For": "10 minutes"
+          }
+        ],
+        columns: {
+          customWidth: {
+            "Reset Code": "40%",
+            "Valid For": "60%"
+          }
+        }
       },
-      outro:
-        "Need help, or have question? Just reply to this email, we'd love to help.",
+      outro: [
+        "If you didn't request a password reset, you can safely ignore this email.",
+        "For security reasons, please do not share this code with anyone.",
+        "Need help? Just reply to this email, we'd love to help."
+      ]
     },
   };
 };

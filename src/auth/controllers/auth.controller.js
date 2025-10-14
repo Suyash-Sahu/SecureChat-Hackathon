@@ -709,24 +709,44 @@ const forgotPasswordRequest = asyncHandler(async (req, res) => {
     
     const user = await User.findOne({ email });
     if (!user) {
-        throw new ApiError(404, "User does not exist");
+        // For security reasons, we don't reveal if the email exists or not
+        return res.status(200).json(
+            new ApiResponse(
+                200,
+                {},
+                "If the email exists in our system, a password reset OTP has been sent to it."
+            )
+        );
     }
 
-    const { unHashedToken, hashedToken, tokenExpiry } = user.generateTemporaryToken();
-
-    user.forgotPasswordExpiry = tokenExpiry;
-    user.forgotPasswordToken = hashedToken;
-
+    // Generate a 6-digit OTP
+    const otp = generateNumericOtp(6);
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+    
+    // Hash the OTP before saving
+    user.forgotPasswordOtp = hashOtp(otp);
+    user.forgotPasswordOtpExpiry = otpExpiry;
+    user.forgotPasswordOtpAttempts = 0;
+    
     await user.save({ validateBeforeSave: false });
 
-    await sendEmail({
-        email: user?.email,
-        subject: "Password reset request",
-        mailgenContent: forgotPasswordMailContent(
-            user.username,
-            `${process.env.FORGOT_PASSWORD_REDIRECT_URL}/${unHashedToken}`
-        )
-    });
+    try {
+        // Send the OTP via email
+        await sendEmail({
+            email: user.email,
+            subject: "Password Reset OTP - Secure Chat",
+            mailgenContent: forgotPasswordMailContent(
+                user.username,
+                otp
+            )
+        });
+        
+        console.log(`Password reset OTP sent to ${user.email}`);
+    } catch (emailError) {
+        console.error('Failed to send password reset email:', emailError);
+        // Even if email fails, we still return success to the client
+        // because the OTP is generated and saved successfully
+    }
 
     return res
         .status(200)
@@ -734,41 +754,64 @@ const forgotPasswordRequest = asyncHandler(async (req, res) => {
             new ApiResponse(
                 200,
                 {},
-                "Password reset mail has been sent to your email"
+                "If the email exists in our system, a password reset OTP has been sent to it."
             )
         );
 });
 
 const resetForgotPassword = asyncHandler(async (req, res) => {
-    const { resetToken } = req.params;
-    const { newPassword } = req.body;
+    const { email, otp, newPassword } = req.body;
 
-    if (!newPassword) {
-        throw new ApiError(400, "New password is required");
+    // Validate input
+    if (!email || !otp || !newPassword) {
+        throw new ApiError(400, "Email, OTP, and new password are required");
     }
 
     if (newPassword.length < 6) {
         throw new ApiError(400, "Password must be at least 6 characters long");
     }
 
-    let hashedToken = crypto
-        .createHash("sha256")
-        .update(resetToken)
-        .digest("hex");
-
-    const user = await User.findOne({
-        forgotPasswordExpiry: { $gt: Date.now() },
-        forgotPasswordToken: hashedToken
-    });
-
+    // Find the user
+    const user = await User.findOne({ email });
     if (!user) {
-        throw new ApiError(400, "Token invalid or expired");
+        throw new ApiError(404, "User not found");
     }
 
-    user.forgotPasswordExpiry = undefined;
-    user.forgotPasswordToken = undefined;
-    user.password = newPassword;
+    // Check if OTP exists and is not expired
+    if (!user.forgotPasswordOtp || !user.forgotPasswordOtpExpiry) {
+        throw new ApiError(400, "No pending password reset request found");
+    }
 
+    if (new Date() > user.forgotPasswordOtpExpiry) {
+        throw new ApiError(400, "OTP has expired. Please request a new one.");
+    }
+
+    // Verify OTP
+    const hashedOtp = hashOtp(otp);
+    if (user.forgotPasswordOtp !== hashedOtp) {
+        // Increment OTP attempts
+        user.forgotPasswordOtpAttempts = (user.forgotPasswordOtpAttempts || 0) + 1;
+        
+        // If too many failed attempts, clear the OTP
+        if (user.forgotPasswordOtpAttempts >= 5) {
+            user.forgotPasswordOtp = undefined;
+            user.forgotPasswordOtpExpiry = undefined;
+            user.forgotPasswordOtpAttempts = 0;
+        }
+        
+        await user.save({ validateBeforeSave: false });
+        
+        throw new ApiError(400, "Invalid OTP");
+    }
+
+    // Update the password
+    user.password = newPassword;
+    
+    // Clear OTP fields
+    user.forgotPasswordOtp = undefined;
+    user.forgotPasswordOtpExpiry = undefined;
+    user.forgotPasswordOtpAttempts = 0;
+    
     await user.save({ validateBeforeSave: false });
 
     return res

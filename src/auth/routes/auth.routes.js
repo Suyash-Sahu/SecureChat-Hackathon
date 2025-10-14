@@ -13,7 +13,7 @@ router.route("/verify-email/:verificationToken").get(verifyEmail)
 router.route("/verify-otp").post(verifyOtpHandler)
 router.route("/refresh-token").post(refreshAccessToken)
 router.route("/forgot-password").post(userForgotPasswordValidator(), validate, forgotPasswordRequest)
-router.route("/reset-password/:resetToken").post(userResetForgotPasswordValidator(), validate, resetForgotPassword )
+router.route("/reset-password").post(userResetForgotPasswordValidator(), validate, resetForgotPassword)
 
 // email/otp
 router.route("/request-email-otp").post(userEmailOtpValidator(), validate, requestEmailOtp)
@@ -32,4 +32,4 @@ router.route("/resend-email-verification").post(verifyJWT, resendEmailVerificati
 
 
 
-export default router; 
+export default router;

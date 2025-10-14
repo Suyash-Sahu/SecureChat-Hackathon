@@ -69,8 +69,24 @@
                     <div class="input-group">
                         <input type="email" id="forgotEmail" placeholder="Email" required>
                     </div>
-                    <button id="forgotBtn" onclick="forgotPassword()">Send Reset Email</button>
+                    <button id="forgotBtn" onclick="forgotPassword()">Send Reset Code</button>
                     <p class="auth-switch"><a href="#" onclick="showLogin()">Back to Login</a></p>
+                </div>
+
+                <!-- Reset Password Form -->
+                <div id="resetPasswordForm" class="auth-form hidden">
+                    <h2>Reset Password</h2>
+                    <div class="input-group">
+                        <input type="email" id="resetEmail" placeholder="Email" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="resetOtp" placeholder="6-digit reset code" maxlength="6" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="newPassword" placeholder="New password" required>
+                    </div>
+                    <button id="resetPasswordBtn" onclick="resetPassword()">Reset Password</button>
+                    <p class="auth-switch"><a href="#" onclick="showForgotPassword()">Back</a> | <a href="#" onclick="showLogin()">Login</a></p>
                 </div>
 
                 <div id="authError" class="error-message"></div>

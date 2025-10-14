@@ -22,6 +22,7 @@ const loginForm = document.getElementById('loginForm');
 const registerForm = document.getElementById('registerForm');
 const otpForm = document.getElementById('otpForm');
 const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+const resetPasswordForm = document.getElementById('resetPasswordForm');
 const authError = document.getElementById('authError');
 const currentUserSpan = document.getElementById('currentUser');
 const userCountSpan = document.getElementById('userCount');
@@ -1181,11 +1182,16 @@ async function forgotPassword() {
         const data = await response.json();
         
         if (data.success === false) {
-            showAuthError(data.message || 'Failed to send reset email');
+            showAuthError(data.message || 'Failed to send reset code');
             return;
         }
         
-        showAuthError('Password reset email sent! Check your inbox.', 'success');
+        showAuthError('If the email exists in our system, a reset code has been sent to it. Please check your inbox.', 'success');
+        
+        // Show the reset password form after a short delay
+        setTimeout(() => {
+            showResetPasswordForm();
+        }, 2000);
         
     } catch (error) {
         logError('Forgot Password', error, { email });
@@ -1199,6 +1205,90 @@ async function forgotPassword() {
     } finally {
         forgotBtn.disabled = false;
         forgotBtn.textContent = originalText;
+    }
+}
+
+function showResetPasswordForm() {
+    document.getElementById('forgotPasswordForm').classList.add('hidden');
+    document.getElementById('resetPasswordForm').classList.remove('hidden');
+    clearAuthError();
+    document.getElementById('resetEmail').value = document.getElementById('forgotEmail').value;
+    document.getElementById('resetEmail').focus();
+}
+
+async function resetPassword() {
+    const email = document.getElementById('resetEmail').value.trim();
+    const otp = document.getElementById('resetOtp').value.trim();
+    const newPassword = document.getElementById('newPassword').value;
+    
+    // Validation
+    if (!email || !otp || !newPassword) {
+        showAuthError('Please fill in all fields');
+        return;
+    }
+    
+    if (!isValidEmail(email)) {
+        showAuthError('Please enter a valid email address');
+        return;
+    }
+    
+    if (otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+        showAuthError('Please enter a valid 6-digit reset code');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        showAuthError('Password must be at least 6 characters long');
+        return;
+    }
+    
+    const resetPasswordBtn = document.getElementById('resetPasswordBtn');
+    const originalText = resetPasswordBtn.textContent;
+    resetPasswordBtn.disabled = true;
+    resetPasswordBtn.textContent = 'Resetting...';
+    
+    try {
+        const response = await fetchWithTimeout('/api/v1/auth/reset-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email, otp, newPassword })
+        }, 10000);
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = getErrorMessage(response.status, errorData);
+            showAuthError(errorMessage);
+            return;
+        }
+        
+        const data = await response.json();
+        
+        if (data.success === false) {
+            showAuthError(data.message || 'Failed to reset password');
+            return;
+        }
+        
+        showAuthError('Password reset successfully! You can now log in with your new password.', 'success');
+        
+        // Show login form after a short delay
+        setTimeout(() => {
+            showLogin();
+        }, 2000);
+        
+    } catch (error) {
+        logError('Reset Password', error);
+        if (error.name === 'TimeoutError') {
+            showAuthError('Request timed out. Please try again.');
+        } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            showAuthError('Cannot connect to server. Please check your internet connection.');
+        } else {
+            showAuthError('An unexpected error occurred. Please try again.');
+        }
+    } finally {
+        resetPasswordBtn.disabled = false;
+        resetPasswordBtn.textContent = originalText;
     }
 }
 
@@ -1311,6 +1401,7 @@ function showLogin() {
     registerForm.classList.add('hidden');
     otpForm.classList.add('hidden');
     forgotPasswordForm.classList.add('hidden');
+    resetPasswordForm.classList.add('hidden');
     authSection.classList.remove('hidden');
     chatSection.classList.add('hidden');
     clearAuthError();
@@ -1322,6 +1413,9 @@ function showRegister() {
     registerForm.classList.remove('hidden');
     otpForm.classList.add('hidden');
     forgotPasswordForm.classList.add('hidden');
+    resetPasswordForm.classList.add('hidden');
+    authSection.classList.remove('hidden');
+    chatSection.classList.add('hidden');
     clearAuthError();
     document.getElementById('registerUsername').focus();
 }
@@ -1331,6 +1425,9 @@ function showOtpForm() {
     registerForm.classList.add('hidden');
     otpForm.classList.remove('hidden');
     forgotPasswordForm.classList.add('hidden');
+    resetPasswordForm.classList.add('hidden');
+    authSection.classList.remove('hidden');
+    chatSection.classList.add('hidden');
     clearAuthError();
     document.getElementById('otpInput').focus();
 }
@@ -1340,8 +1437,24 @@ function showForgotPassword() {
     registerForm.classList.add('hidden');
     otpForm.classList.add('hidden');
     forgotPasswordForm.classList.remove('hidden');
+    resetPasswordForm.classList.add('hidden');
+    authSection.classList.remove('hidden');
+    chatSection.classList.add('hidden');
     clearAuthError();
     document.getElementById('forgotEmail').focus();
+}
+
+function showResetPasswordForm() {
+    loginForm.classList.add('hidden');
+    registerForm.classList.add('hidden');
+    otpForm.classList.add('hidden');
+    forgotPasswordForm.classList.add('hidden');
+    resetPasswordForm.classList.remove('hidden');
+    authSection.classList.remove('hidden');
+    chatSection.classList.add('hidden');
+    clearAuthError();
+    document.getElementById('resetEmail').value = document.getElementById('forgotEmail').value;
+    document.getElementById('resetEmail').focus();
 }
 
 function showAuthError(message, type = 'error') {

@@ -71,6 +71,13 @@ const userSchema = new Schema(
         refreshToken: String,
         forgotPasswordToken: String,
         forgotPasswordExpiry: Date,
+        // New OTP fields for password reset
+        forgotPasswordOtp: String,
+        forgotPasswordOtpExpiry: Date,
+        forgotPasswordOtpAttempts: {
+            type: Number,
+            default: 0
+        },
         emailVerificationToken: String,
         emailVerificationExpiry: Date
     },
