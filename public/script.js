@@ -1727,7 +1727,31 @@ function createFileElement(file) {
     const fileContainer = document.createElement('div');
     fileContainer.className = 'file-preview';
     
-    if (file.mimetype && file.mimetype.startsWith('image/')) {
+    // Check if it's an audio file
+    if (file.mimetype && file.mimetype.startsWith('audio/')) {
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.style.width = '100%';
+        const source = document.createElement('source');
+        source.src = file.url;
+        source.type = file.mimetype;
+        audio.appendChild(source);
+        fileContainer.appendChild(audio);
+    }
+    // Check if it's a video file
+    else if (file.mimetype && file.mimetype.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.style.width = '100%';
+        video.style.maxHeight = '300px';
+        const source = document.createElement('source');
+        source.src = file.url;
+        source.type = file.mimetype;
+        video.appendChild(source);
+        fileContainer.appendChild(video);
+    }
+    // Check if it's an image
+    else if (file.mimetype && file.mimetype.startsWith('image/')) {
         // Image preview
         const img = document.createElement('img');
         img.src = file.url;
@@ -1739,7 +1763,7 @@ function createFileElement(file) {
         };
         fileContainer.appendChild(img);
     } else {
-        // Download link for non-images
+        // Download link for non-images, non-audio, non-video
         const downloadLink = createDownloadLink(file);
         fileContainer.appendChild(downloadLink);
     }
@@ -1828,11 +1852,14 @@ function handleFileSelect(event) {
         const allowedTypes = [
             'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
             'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain'
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain',
+            'audio/wav', 'audio/mp3', 'audio/mpeg',
+            'video/mp4', 'video/avi', 'video/quicktime', 'video/x-msvideo', 
+            'video/x-flv', 'video/webm', 'video/x-matroska'
         ];
         
         if (!allowedTypes.includes(file.type)) {
-            showMessageError('Invalid file type. Only images, PDFs, documents, and text files are allowed.');
+            showMessageError('Invalid file type. Only images, PDFs, documents, text, audio, and video files are allowed.');
             fileInput.value = '';
             return;
         }

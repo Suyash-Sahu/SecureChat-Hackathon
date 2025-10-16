@@ -31,11 +31,21 @@ const upload = multer({
 			'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 			'text/plain',
+			'audio/wav',
+			'audio/mp3',
+			'audio/mpeg',
+			'video/mp4',
+			'video/avi',
+			'video/quicktime',
+			'video/x-msvideo',
+			'video/x-flv',
+			'video/webm',
+			'video/x-matroska'
 		];
 		if (allowedTypes.includes(file.mimetype)) {
 			cb(null, true);
 		} else {
-			cb(new Error('Invalid file type. Only images, PDFs, documents, and text files are allowed.'), false);
+			cb(new Error('Invalid file type. Only images, PDFs, documents, text, audio, and video files are allowed.'), false);
 		}
 	},
 });
@@ -59,5 +69,3 @@ router.post('/', upload.single('file'), fileScanMiddleware, (req, res) => {
 });
 
 export default router;
-
-
