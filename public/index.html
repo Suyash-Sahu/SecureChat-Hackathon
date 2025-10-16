@@ -98,53 +98,63 @@
             <div class="chat-header">
                 <div class="user-info">
                     <span>Logged in as: <strong id="currentUser"></strong></span>
-                    <button id="contactsBtn" class="contacts-btn">👥 Contacts</button>
                     <button id="logoutBtn" onclick="logout()" class="logout-btn">Logout</button>
                 </div>
                 <div class="online-users">
-                    <span>Online: <span id="userCount">0</span></span>
+                    <span>Online Friends: <span id="userCount">0</span></span>
                 </div>
             </div>
 
             <div class="chat-container">
                 <div class="sidebar">
                     <div class="sidebar-tabs">
-                        <button id="onlineUsersTab" class="tab-btn active">Online</button>
-                        <button id="contactsTab" class="tab-btn">Contacts</button>
-                        <button id="requestsTab" class="tab-btn">Requests</button>
+                        <button id="onlineUsersTab" class="tab-btn active" onclick="switchTab('onlineUsers')">Online Users</button>
+                        <button id="contactsTab" class="tab-btn" onclick="switchTab('contacts')">My Friends</button>
+                        <button id="requestsTab" class="tab-btn" onclick="switchTab('requests')">Requests</button>
+                        <button id="addContactTab" class="tab-btn" onclick="switchTab('addContact')">Add Contact</button>
                     </div>
 
                     <div class="tab-content">
                         <!-- Online Users Tab -->
                         <div id="onlineUsersContent" class="tab-panel active">
-                            <h3>Users Online</h3>
+                            <h3>Online Friends</h3>
                             <div id="userList" class="user-list"></div>
                         </div>
 
                         <!-- Contacts Tab -->
                         <div id="contactsContent" class="tab-panel">
                             <div class="contacts-header">
-                                <h3>My Contacts</h3>
-                                <button id="addContactBtn" class="add-contact-btn">+ Add</button>
+                                <h3>My Friends</h3>
+                                <button class="add-contact-btn" onclick="switchTab('addContact')">Add Friend</button>
                             </div>
-                            <div class="contacts-list">
-                                <ul id="contactsList"></ul>
+                            <div id="contactsList" class="contacts-list">
+                                <ul id="friendsList"></ul>
                             </div>
                         </div>
 
-                        <!-- Friend Requests Tab -->
+                        <!-- Requests Tab -->
                         <div id="requestsContent" class="tab-panel">
                             <div class="requests-header">
                                 <h3>Friend Requests</h3>
                                 <div class="request-tabs">
-                                    <button id="incomingRequestsTab" class="request-tab-btn active">Incoming</button>
-                                    <button id="outgoingRequestsTab" class="request-tab-btn">Outgoing</button>
+                                    <button id="incomingRequestsTab" class="request-tab-btn active" onclick="switchRequestTab('incoming')">Incoming</button>
+                                    <button id="outgoingRequestsTab" class="request-tab-btn" onclick="switchRequestTab('outgoing')">Outgoing</button>
                                 </div>
                             </div>
                             <div class="requests-list">
-                                <ul id="incomingRequestsList"></ul>
-                                <ul id="outgoingRequestsList" class="hidden"></ul>
+                                <ul id="incomingRequestsList" class="requests-list-ul"></ul>
+                                <ul id="outgoingRequestsList" class="requests-list-ul hidden"></ul>
                             </div>
+                        </div>
+
+                        <!-- Add Contact Tab -->
+                        <div id="addContactContent" class="tab-panel">
+                            <h3>Add Contact</h3>
+                            <div class="search-section">
+                                <input type="text" id="userSearchInput" placeholder="Search by username or email">
+                                <button id="searchUsersBtn" onclick="searchUsers()">Search</button>
+                            </div>
+                            <div id="searchResults" class="search-results"></div>
                         </div>
                     </div>
                 </div>
@@ -153,13 +163,6 @@
                     <div id="chatMessages" class="chat-messages"></div>
 
                     <div class="message-input-container">
-                        <div class="recipient-selector">
-                            <label for="recipientSelect">To:</label>
-                            <select id="recipientSelect">
-                                <option value="">Select recipient...</option>
-                            </select>
-                        </div>
-
                         <div class="file-upload-section">
                             <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.pdf,.docx,.xlsx,.txt"
                                 style="display: none;">
@@ -183,23 +186,6 @@
             </div>
         </div>
 
-        <!-- Contact Management Modal -->
-        <div id="contactModal" class="modal hidden">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Add Contact</h3>
-                    <button id="closeContactModal" class="close-btn">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div class="search-section">
-                        <input type="text" id="userSearchInput" placeholder="Search by username or email...">
-                        <button id="searchUsersBtn">Search</button>
-                    </div>
-                    <div id="searchResults" class="search-results"></div>
-                </div>
-            </div>
-        </div>
-
         <!-- User Actions Modal -->
         <div id="userActionsModal" class="modal hidden">
             <div class="modal-content">
@@ -209,27 +195,6 @@
                 </div>
                 <div class="modal-body">
                     <div id="userActionsContent"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Report User Modal -->
-        <div id="reportModal" class="modal hidden">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Report User</h3>
-                    <button id="closeReportModal" class="close-btn">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="reportReason">Reason for reporting:</label>
-                        <textarea id="reportReason" placeholder="Please describe why you're reporting this user..."
-                            rows="4"></textarea>
-                    </div>
-                    <div class="modal-actions">
-                        <button id="submitReportBtn" class="btn btn-danger">Submit Report</button>
-                        <button id="cancelReportBtn" class="btn btn-secondary">Cancel</button>
-                    </div>
                 </div>
             </div>
         </div>

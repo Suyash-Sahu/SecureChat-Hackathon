@@ -73,9 +73,7 @@ function verifyJWT(req, res, next) {
   }
 }
 
-export { verifyJWT };
-
-// Require email verification for protected contact features
+// Require email verification for protected features
 export async function requireEmailVerified(req, res, next) {
   try {
     if (!req.user || !req.user.id) {
@@ -94,4 +92,4 @@ export async function requireEmailVerified(req, res, next) {
   }
 }
 
-
+export { verifyJWT };

@@ -1,9 +1,7 @@
 import mongoose from 'mongoose';
 import { User } from '../auth/models/user.models.js';
 import FriendRequest from '../models/friendRequest.models.js';
-import Contact from '../models/contact.models.js';
-import BlockList from '../models/blockList.models.js';
-import Report from '../models/report.models.js';
+import Friend from '../models/friend.models.js';
 import { ApiError } from '../auth/utils/api-error.js';
 import { ApiResponse } from '../auth/utils/api-response.js';
 import { asyncHandler } from '../auth/utils/async-handler.js';
@@ -11,80 +9,61 @@ import { asyncHandler } from '../auth/utils/async-handler.js';
 // Search users
 const searchUsers = asyncHandler(async (req, res) => {
     try {
-        const { query, limit = 20 } = req.query;
-        const userId = req.user._id;
+        const { query } = req.query;
+        const currentUserId = req.user._id;
 
         if (!query || query.trim().length < 2) {
             throw new ApiError(400, 'Search query must be at least 2 characters long');
         }
 
-        const searchQuery = query.trim();
-        const searchLimit = Math.min(parseInt(limit), 50); // Max 50 results
-
-        // Get blocked users to exclude from search
-        const blockedUsers = await BlockList.find({ userId }).select('blockedUserId');
-        const blockedUserIds = blockedUsers.map(block => block.blockedUserId);
-
-        // Search users by username or email
+        // Search users by username or email (excluding current user)
         const users = await User.find({
             $and: [
-                { _id: { $ne: userId } }, // Exclude self
-                { _id: { $nin: blockedUserIds } }, // Exclude blocked users
                 {
                     $or: [
-                        { username: { $regex: searchQuery, $options: 'i' } },
-                        { email: { $regex: searchQuery, $options: 'i' } }
+                        { username: { $regex: query, $options: 'i' } },
+                        { email: { $regex: query, $options: 'i' } }
                     ]
-                }
+                },
+                { _id: { $ne: currentUserId } }
             ]
         })
-        .select('username email avatar isEmailVerified createdAt')
-        .limit(searchLimit)
-        .lean();
+        .select('username email')
+        .limit(20);
 
-        // Check existing friend requests and contacts
-        const userIds = users.map(user => user._id);
-        
-        const [friendRequests, contacts] = await Promise.all([
-            FriendRequest.find({
+        // Check friendship status for each user
+        const usersWithStatus = await Promise.all(users.map(async (user) => {
+            // Check if they are already friends
+            const isFriend = await Friend.findOne({
                 $or: [
-                    { fromUserId: userId, toUserId: { $in: userIds } },
-                    { fromUserId: { $in: userIds }, toUserId: userId }
+                    { userId: currentUserId, friendId: user._id },
+                    { userId: user._id, friendId: currentUserId }
                 ]
-            }).lean(),
-            Contact.find({
-                userId,
-                contactId: { $in: userIds }
-            }).lean()
-        ]);
+            });
 
-        // Create maps for quick lookup
-        const requestMap = {};
-        const contactMap = {};
+            // Check if there's a pending friend request
+            const friendRequest = await FriendRequest.findOne({
+                $or: [
+                    { senderId: currentUserId, receiverId: user._id },
+                    { senderId: user._id, receiverId: currentUserId }
+                ]
+            });
 
-        friendRequests.forEach(request => {
-            const targetUserId = request.fromUserId.toString() === userId ? 
-                request.toUserId.toString() : request.fromUserId.toString();
-            requestMap[targetUserId] = {
-                status: request.status,
-                isOutgoing: request.fromUserId.toString() === userId
+            let relationshipStatus = 'none';
+            if (isFriend) {
+                relationshipStatus = 'friend';
+            } else if (friendRequest) {
+                relationshipStatus = friendRequest.senderId.toString() === currentUserId.toString() 
+                    ? 'outgoing_request' 
+                    : 'incoming_request';
+            }
+
+            return {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                relationshipStatus
             };
-        });
-
-        contacts.forEach(contact => {
-            contactMap[contact.contactId.toString()] = true;
-        });
-
-        // Add relationship status to users
-        const usersWithStatus = users.map(user => ({
-            id: user._id,
-            username: user.username,
-            email: user.email,
-            avatar: user.avatar,
-            isEmailVerified: user.isEmailVerified,
-            createdAt: user.createdAt,
-            relationship: contactMap[user._id.toString()] ? 'contact' : 
-                         requestMap[user._id.toString()] ? requestMap[user._id.toString()] : 'none'
         }));
 
         return res.status(200).json(
@@ -93,9 +72,6 @@ const searchUsers = asyncHandler(async (req, res) => {
 
     } catch (error) {
         console.error('Search users error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
         throw new ApiError(500, 'Failed to search users');
     }
 });
@@ -103,67 +79,52 @@ const searchUsers = asyncHandler(async (req, res) => {
 // Send friend request
 const sendFriendRequest = asyncHandler(async (req, res) => {
     try {
-        const { userId: targetUserId } = req.params;
-        const fromUserId = req.user._id;
+        const { receiverId } = req.params;
+        const senderId = req.user._id;
 
-        if (!targetUserId) {
-            throw new ApiError(400, 'User ID is required');
-        }
-
-        if (targetUserId === fromUserId.toString()) {
+        // Validate that sender and receiver are different
+        if (senderId.toString() === receiverId) {
             throw new ApiError(400, 'Cannot send friend request to yourself');
         }
 
-        // Check if target user exists
-        const targetUser = await User.findById(targetUserId);
-        if (!targetUser) {
+        // Check if receiver exists
+        const receiver = await User.findById(receiverId);
+        if (!receiver) {
             throw new ApiError(404, 'User not found');
         }
 
-        // Check if already blocked
-        const isBlocked = await BlockList.findOne({
-            $or: [
-                { userId: fromUserId, blockedUserId: targetUserId },
-                { userId: targetUserId, blockedUserId: fromUserId }
-            ]
-        });
-
-        if (isBlocked) {
-            throw new ApiError(403, 'Cannot send friend request to blocked user');
-        }
-
         // Check if already friends
-        const existingContact = await Contact.findOne({
+        const existingFriendship = await Friend.findOne({
             $or: [
-                { userId: fromUserId, contactId: targetUserId },
-                { userId: targetUserId, contactId: fromUserId }
+                { userId: senderId, friendId: receiverId },
+                { userId: receiverId, friendId: senderId }
             ]
         });
 
-        if (existingContact) {
-            throw new ApiError(409, 'Already friends with this user');
+        if (existingFriendship) {
+            throw new ApiError(400, 'Already friends with this user');
         }
 
         // Check for existing request
         const existingRequest = await FriendRequest.findOne({
             $or: [
-                { fromUserId, toUserId: targetUserId },
-                { fromUserId: targetUserId, toUserId: fromUserId }
+                { senderId, receiverId },
+                { senderId: receiverId, receiverId: senderId }
             ]
         });
 
         if (existingRequest) {
-            if (existingRequest.fromUserId.toString() === fromUserId) {
-                throw new ApiError(409, 'Friend request already sent');
+            if (existingRequest.senderId.toString() === senderId.toString()) {
+                throw new ApiError(400, 'Friend request already sent');
             } else {
-                throw new ApiError(409, 'This user has already sent you a friend request');
+                throw new ApiError(400, 'This user has already sent you a friend request');
             }
         }
 
         // Create friend request
         const friendRequest = await FriendRequest.create({
-            fromUserId,
-            toUserId: targetUserId
+            senderId,
+            receiverId
         });
 
         return res.status(201).json(
@@ -185,35 +146,31 @@ const getFriendRequests = asyncHandler(async (req, res) => {
         const userId = req.user._id;
         const { type = 'incoming' } = req.query; // 'incoming' or 'outgoing'
 
-        let query = {};
+        let requests = [];
         if (type === 'incoming') {
-            query = { toUserId: userId, status: 'pending' };
+            requests = await FriendRequest.find({ receiverId: userId, status: 'pending' })
+                .populate('senderId', 'username email')
+                .sort({ createdAt: -1 });
         } else if (type === 'outgoing') {
-            query = { fromUserId: userId, status: 'pending' };
+            requests = await FriendRequest.find({ senderId: userId, status: 'pending' })
+                .populate('receiverId', 'username email')
+                .sort({ createdAt: -1 });
         } else {
             throw new ApiError(400, 'Invalid type parameter. Use "incoming" or "outgoing"');
         }
 
-        const requests = await FriendRequest.find(query)
-            .populate('fromUserId', 'username email avatar')
-            .populate('toUserId', 'username email avatar')
-            .sort({ createdAt: -1 })
-            .lean();
-
         const formattedRequests = requests.map(request => ({
             id: request._id,
-            fromUser: {
-                id: request.fromUserId._id,
-                username: request.fromUserId.username,
-                email: request.fromUserId.email,
-                avatar: request.fromUserId.avatar
-            },
-            toUser: {
-                id: request.toUserId._id,
-                username: request.toUserId.username,
-                email: request.toUserId.email,
-                avatar: request.toUserId.avatar
-            },
+            sender: request.senderId ? {
+                id: request.senderId._id,
+                username: request.senderId.username,
+                email: request.senderId.email
+            } : null,
+            receiver: request.receiverId ? {
+                id: request.receiverId._id,
+                username: request.receiverId.username,
+                email: request.receiverId.email
+            } : null,
             status: request.status,
             createdAt: request.createdAt
         }));
@@ -224,9 +181,6 @@ const getFriendRequests = asyncHandler(async (req, res) => {
 
     } catch (error) {
         console.error('Get friend requests error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
         throw new ApiError(500, 'Failed to get friend requests');
     }
 });
@@ -237,9 +191,10 @@ const acceptFriendRequest = asyncHandler(async (req, res) => {
         const { requestId } = req.params;
         const userId = req.user._id;
 
+        // Find the friend request where user is the receiver
         const friendRequest = await FriendRequest.findOne({
             _id: requestId,
-            toUserId: userId,
+            receiverId: userId,
             status: 'pending'
         });
 
@@ -247,33 +202,19 @@ const acceptFriendRequest = asyncHandler(async (req, res) => {
             throw new ApiError(404, 'Friend request not found or already processed');
         }
 
-        // Start transaction
-        const session = await mongoose.startSession();
-        session.startTransaction();
+        // Update request status
+        friendRequest.status = 'accepted';
+        await friendRequest.save();
 
-        try {
-            // Update request status
-            friendRequest.status = 'accepted';
-            await friendRequest.save({ session });
+        // Create friendship in both directions
+        await Friend.create([
+            { userId: friendRequest.senderId, friendId: friendRequest.receiverId },
+            { userId: friendRequest.receiverId, friendId: friendRequest.senderId }
+        ]);
 
-            // Create contact for both users
-            await Contact.create([
-                { userId: friendRequest.fromUserId, contactId: friendRequest.toUserId },
-                { userId: friendRequest.toUserId, contactId: friendRequest.fromUserId }
-            ], { session });
-
-            await session.commitTransaction();
-
-            return res.status(200).json(
-                new ApiResponse(200, {}, 'Friend request accepted successfully')
-            );
-
-        } catch (error) {
-            await session.abortTransaction();
-            throw error;
-        } finally {
-            session.endSession();
-        }
+        return res.status(200).json(
+            new ApiResponse(200, {}, 'Friend request accepted successfully')
+        );
 
     } catch (error) {
         console.error('Accept friend request error:', error);
@@ -290,9 +231,10 @@ const rejectFriendRequest = asyncHandler(async (req, res) => {
         const { requestId } = req.params;
         const userId = req.user._id;
 
+        // Find the friend request where user is the receiver
         const friendRequest = await FriendRequest.findOne({
             _id: requestId,
-            toUserId: userId,
+            receiverId: userId,
             status: 'pending'
         });
 
@@ -300,6 +242,7 @@ const rejectFriendRequest = asyncHandler(async (req, res) => {
             throw new ApiError(404, 'Friend request not found or already processed');
         }
 
+        // Update request status
         friendRequest.status = 'rejected';
         await friendRequest.save();
 
@@ -322,9 +265,10 @@ const cancelFriendRequest = asyncHandler(async (req, res) => {
         const { requestId } = req.params;
         const userId = req.user._id;
 
+        // Find the friend request where user is the sender
         const friendRequest = await FriendRequest.findOne({
             _id: requestId,
-            fromUserId: userId,
+            senderId: userId,
             status: 'pending'
         });
 
@@ -332,6 +276,7 @@ const cancelFriendRequest = asyncHandler(async (req, res) => {
             throw new ApiError(404, 'Friend request not found or already processed');
         }
 
+        // Delete the friend request
         await FriendRequest.findByIdAndDelete(requestId);
 
         return res.status(200).json(
@@ -347,241 +292,61 @@ const cancelFriendRequest = asyncHandler(async (req, res) => {
     }
 });
 
-// Get contact list
-const getContactList = asyncHandler(async (req, res) => {
+// Get friends list
+const getFriends = asyncHandler(async (req, res) => {
     try {
         const userId = req.user._id;
-        const { limit = 50, cursor } = req.query;
 
-        const query = { userId };
-        if (cursor) {
-            query._id = { $gt: cursor };
-        }
+        // Get all friends
+        const friendships = await Friend.find({ userId })
+            .populate('friendId', 'username email');
 
-        const contacts = await Contact.find(query)
-            .populate('contactId', 'username email avatar isEmailVerified')
-            .sort({ createdAt: -1 })
-            .limit(Math.min(parseInt(limit), 100))
-            .lean();
-
-        const formattedContacts = contacts.map(contact => ({
-            id: contact._id,
-            contactId: contact.contactId._id,
-            username: contact.contactId.username,
-            email: contact.contactId.email,
-            avatar: contact.contactId.avatar,
-            isEmailVerified: contact.contactId.isEmailVerified,
-            addedAt: contact.createdAt
+        const friends = friendships.map(friendship => ({
+            id: friendship.friendId._id,
+            username: friendship.friendId.username,
+            email: friendship.friendId.email,
+            createdAt: friendship.createdAt
         }));
 
-        const nextCursor = contacts.length > 0 ? contacts[contacts.length - 1]._id : null;
-
         return res.status(200).json(
-            new ApiResponse(200, { 
-                contacts: formattedContacts, 
-                nextCursor 
-            }, 'Contact list retrieved successfully')
+            new ApiResponse(200, { friends }, 'Friends list retrieved successfully')
         );
 
     } catch (error) {
-        console.error('Get contact list error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
-        throw new ApiError(500, 'Failed to get contact list');
+        console.error('Get friends error:', error);
+        throw new ApiError(500, 'Failed to get friends list');
     }
 });
 
-// Remove contact
-const removeContact = asyncHandler(async (req, res) => {
+// Remove friend
+const removeFriend = asyncHandler(async (req, res) => {
     try {
-        const { contactId } = req.params;
+        const { friendId } = req.params;
         const userId = req.user._id;
 
-        const contact = await Contact.findOne({
-            userId,
-            contactId
+        // Remove friendship in both directions
+        await Friend.deleteMany({
+            $or: [
+                { userId, friendId },
+                { userId: friendId, friendId: userId }
+            ]
         });
 
-        if (!contact) {
-            throw new ApiError(404, 'Contact not found');
-        }
-
-        // Remove contact for both users
-        await Contact.deleteMany({
+        // Also remove any pending friend requests between these users
+        await FriendRequest.deleteMany({
             $or: [
-                { userId, contactId },
-                { userId: contactId, contactId: userId }
+                { senderId: userId, receiverId: friendId },
+                { senderId: friendId, receiverId: userId }
             ]
         });
 
         return res.status(200).json(
-            new ApiResponse(200, {}, 'Contact removed successfully')
+            new ApiResponse(200, {}, 'Friend removed successfully')
         );
 
     } catch (error) {
-        console.error('Remove contact error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
-        throw new ApiError(500, 'Failed to remove contact');
-    }
-});
-
-// Block user
-const blockUser = asyncHandler(async (req, res) => {
-    try {
-        const { userId: targetUserId } = req.params;
-        const { reason } = req.body;
-        const userId = req.user._id;
-
-        if (targetUserId === userId.toString()) {
-            throw new ApiError(400, 'Cannot block yourself');
-        }
-
-        // Check if user exists
-        const targetUser = await User.findById(targetUserId);
-        if (!targetUser) {
-            throw new ApiError(404, 'User not found');
-        }
-
-        // Check if already blocked
-        const existingBlock = await BlockList.findOne({
-            userId,
-            blockedUserId: targetUserId
-        });
-
-        if (existingBlock) {
-            throw new ApiError(409, 'User is already blocked');
-        }
-
-        // Start transaction
-        const session = await mongoose.startSession();
-        session.startTransaction();
-
-        try {
-            // Create block entry
-            await BlockList.create([{
-                userId,
-                blockedUserId: targetUserId,
-                reason
-            }], { session });
-
-            // Remove from contacts if exists
-            await Contact.deleteMany({
-                $or: [
-                    { userId, contactId: targetUserId },
-                    { userId: targetUserId, contactId: userId }
-                ]
-            }, { session });
-
-            // Cancel any pending friend requests
-            await FriendRequest.deleteMany({
-                $or: [
-                    { fromUserId: userId, toUserId: targetUserId },
-                    { fromUserId: targetUserId, toUserId: userId }
-                ]
-            }, { session });
-
-            await session.commitTransaction();
-
-            return res.status(200).json(
-                new ApiResponse(200, {}, 'User blocked successfully')
-            );
-
-        } catch (error) {
-            await session.abortTransaction();
-            throw error;
-        } finally {
-            session.endSession();
-        }
-
-    } catch (error) {
-        console.error('Block user error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
-        throw new ApiError(500, 'Failed to block user');
-    }
-});
-
-// Unblock user
-const unblockUser = asyncHandler(async (req, res) => {
-    try {
-        const { userId: targetUserId } = req.params;
-        const userId = req.user._id;
-
-        const block = await BlockList.findOneAndDelete({
-            userId,
-            blockedUserId: targetUserId
-        });
-
-        if (!block) {
-            throw new ApiError(404, 'User is not blocked');
-        }
-
-        return res.status(200).json(
-            new ApiResponse(200, {}, 'User unblocked successfully')
-        );
-
-    } catch (error) {
-        console.error('Unblock user error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
-        throw new ApiError(500, 'Failed to unblock user');
-    }
-});
-
-// Report user
-const reportUser = asyncHandler(async (req, res) => {
-    try {
-        const { userId: targetUserId } = req.params;
-        const { reason } = req.body;
-        const userId = req.user._id;
-
-        if (!reason || reason.trim().length < 10) {
-            throw new ApiError(400, 'Report reason must be at least 10 characters long');
-        }
-
-        if (targetUserId === userId.toString()) {
-            throw new ApiError(400, 'Cannot report yourself');
-        }
-
-        // Check if user exists
-        const targetUser = await User.findById(targetUserId);
-        if (!targetUser) {
-            throw new ApiError(404, 'User not found');
-        }
-
-        // Check if already reported recently (prevent spam)
-        const recentReport = await Report.findOne({
-            reporterId: userId,
-            reportedUserId: targetUserId,
-            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // 24 hours
-        });
-
-        if (recentReport) {
-            throw new ApiError(429, 'You have already reported this user recently');
-        }
-
-        // Create report
-        const report = await Report.create({
-            reporterId: userId,
-            reportedUserId: targetUserId,
-            reason: reason.trim()
-        });
-
-        return res.status(201).json(
-            new ApiResponse(201, { report }, 'User reported successfully')
-        );
-
-    } catch (error) {
-        console.error('Report user error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
-        throw new ApiError(500, 'Failed to report user');
+        console.error('Remove friend error:', error);
+        throw new ApiError(500, 'Failed to remove friend');
     }
 });
 
@@ -592,9 +357,6 @@ export {
     acceptFriendRequest,
     rejectFriendRequest,
     cancelFriendRequest,
-    getContactList,
-    removeContact,
-    blockUser,
-    unblockUser,
-    reportUser
+    getFriends,
+    removeFriend
 };

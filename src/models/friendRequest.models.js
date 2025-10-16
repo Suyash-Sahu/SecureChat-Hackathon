@@ -1,40 +1,25 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema } from "mongoose";
 
-const friendRequestSchema = new mongoose.Schema({
-    fromUserId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+const friendRequestSchema = new Schema({
+    senderId: {
+        type: Schema.Types.ObjectId,
+        ref: "User",
         required: true
     },
-    toUserId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+    receiverId: {
+        type: Schema.Types.ObjectId,
+        ref: "User",
         required: true
     },
     status: {
         type: String,
-        enum: ['pending', 'accepted', 'rejected'],
-        default: 'pending'
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now
+        enum: ["pending", "accepted", "rejected"],
+        default: "pending"
     }
-}, {
-    timestamps: true
-});
+}, { timestamps: true });
 
-// Indexes
-// Prevent duplicate requests between same pair
-friendRequestSchema.index({ fromUserId: 1, toUserId: 1 }, { unique: true });
-// Query helpers
-friendRequestSchema.index({ toUserId: 1, status: 1 });
-friendRequestSchema.index({ fromUserId: 1, status: 1 });
+// Ensure unique sender-receiver pairs for pending requests
+friendRequestSchema.index({ senderId: 1, receiverId: 1 }, { unique: true });
+friendRequestSchema.index({ receiverId: 1, status: 1 });
 
-const FriendRequest = mongoose.model('FriendRequest', friendRequestSchema);
-
-export default FriendRequest;
+export default mongoose.model("FriendRequest", friendRequestSchema);

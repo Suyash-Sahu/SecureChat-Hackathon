@@ -6,7 +6,6 @@ import cookieParser from 'cookie-parser';
 import { UPLOAD_DIR } from './utils/constants.js';
 import fileRouter from './routes/file.routes.js';
 import healthRouter from './routes/healthCheck.routes.js';
-import contactRouter from './routes/contact.routes.js';
 import { mountAuth } from './auth/mount.js';
 import { setCsrfCookie, verifyCsrfToken } from './middlewares/csrf.middleware.js';
 import helmet from 'helmet';
@@ -103,9 +102,10 @@ app.use('/api/v1/auth/verify-email-otp', otpLimiter);
 // Apply CSRF verification for state-changing routes
 app.use(verifyCsrfToken);
 app.use('/upload', fileRouter);
-app.use('/contacts', contactRouter);
-import contactManagementRouter from './routes/contactManagement.routes.js';
-app.use('/api/v1/contacts', contactManagementRouter);
+
+// Contact routes
+import contactRouter from './routes/contact.routes.js';
+app.use('/api/v1/contacts', contactRouter);
 
 // Auth routes already mounted above
 

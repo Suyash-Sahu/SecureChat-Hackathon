@@ -3,17 +3,17 @@ let socket;
 let currentUser = '';
 let messageHistory = [];
 let selectedFile = null;
-let contacts = [];
 let onlineUsers = [];
 let accessToken = '';
 let refreshToken = '';
 let isReconnecting = false;
 let reconnectAttempts = 0;
-const maxReconnectAttempts = 5;
-
-// Contact management variables
-let friendRequests = { incoming: [], outgoing: [] };
-let selectedUserId = null;
+let currentChatRecipient = null;
+let friends = [];
+let friendRequests = {
+    incoming: [],
+    outgoing: []
+};
 
 // DOM elements
 const authSection = document.getElementById('authSection');
@@ -28,7 +28,6 @@ const currentUserSpan = document.getElementById('currentUser');
 const userCountSpan = document.getElementById('userCount');
 const userListDiv = document.getElementById('userList');
 const chatMessagesDiv = document.getElementById('chatMessages');
-const recipientSelect = document.getElementById('recipientSelect');
 const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
 const logoutBtn = document.getElementById('logoutBtn');
@@ -236,32 +235,24 @@ function setupEventListeners() {
         }
     });
     
+    // Enter key in search input
+    document.getElementById('userSearchInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            searchUsers();
+        }
+    });
+    
     // File input change
     fileInput.addEventListener('change', handleFileSelect);
     
     // Logout button
     logoutBtn.addEventListener('click', logout);
     
-    // Contact management
-    setupContactEventListeners();
-}
-
-// Contact Management Functions
-function setupContactEventListeners() {
     // Tab switching
     document.getElementById('onlineUsersTab').addEventListener('click', () => switchTab('onlineUsers'));
     document.getElementById('contactsTab').addEventListener('click', () => switchTab('contacts'));
     document.getElementById('requestsTab').addEventListener('click', () => switchTab('requests'));
-    
-    // Contact management buttons
-    document.getElementById('addContactBtn').addEventListener('click', showContactModal);
-    document.getElementById('closeContactModal').addEventListener('click', hideContactModal);
-    document.getElementById('searchUsersBtn').addEventListener('click', searchUsers);
-    document.getElementById('userSearchInput').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            searchUsers();
-        }
-    });
+    document.getElementById('addContactTab').addEventListener('click', () => switchTab('addContact'));
     
     // Request tabs
     document.getElementById('incomingRequestsTab').addEventListener('click', () => switchRequestTab('incoming'));
@@ -269,20 +260,6 @@ function setupContactEventListeners() {
     
     // Modal close buttons
     document.getElementById('closeUserActionsModal').addEventListener('click', hideUserActionsModal);
-    document.getElementById('closeReportModal').addEventListener('click', hideReportModal);
-    document.getElementById('cancelReportBtn').addEventListener('click', hideReportModal);
-    document.getElementById('submitReportBtn').addEventListener('click', submitReport);
-    
-    // Click outside modal to close
-    document.getElementById('contactModal').addEventListener('click', function(e) {
-        if (e.target === this) hideContactModal();
-    });
-    document.getElementById('userActionsModal').addEventListener('click', function(e) {
-        if (e.target === this) hideUserActionsModal();
-    });
-    document.getElementById('reportModal').addEventListener('click', function(e) {
-        if (e.target === this) hideReportModal();
-    });
 }
 
 // Tab switching
@@ -303,9 +280,11 @@ function switchTab(tabName) {
     
     // Load data for the selected tab
     if (tabName === 'contacts') {
-        loadContacts();
+        loadFriends();
     } else if (tabName === 'requests') {
         loadFriendRequests();
+    } else if (tabName === 'addContact') {
+        document.getElementById('userSearchInput').focus();
     }
 }
 
@@ -314,7 +293,7 @@ function switchRequestTab(type) {
     document.querySelectorAll('.request-tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
-    document.querySelectorAll('.requests-list ul').forEach(list => {
+    document.querySelectorAll('.requests-list-ul').forEach(list => {
         list.classList.add('hidden');
     });
     
@@ -322,56 +301,56 @@ function switchRequestTab(type) {
     document.getElementById(type + 'RequestsList').classList.remove('hidden');
 }
 
-// Load contacts
-async function loadContacts() {
+// Load friends
+async function loadFriends() {
     try {
-        const response = await fetchWithTimeout('/api/v1/contacts/list', {
+        const response = await fetchWithTimeout('/api/v1/contacts/friends', {
             headers: {
                 'Authorization': `Bearer ${accessToken}`
             }
         }, 10000);
         
         if (!response.ok) {
-            throw new Error(`Failed to load contacts: ${response.status}`);
+            throw new Error(`Failed to load friends: ${response.status}`);
         }
         
         const data = await response.json();
-        contacts = data.data.contacts || [];
-        displayContacts();
+        friends = data.data.friends || [];
+        displayFriends();
         
     } catch (error) {
-        logError('Load Contacts', error);
-        showConnectionStatus('Failed to load contacts', 'error');
+        logError('Load Friends', error);
+        showConnectionStatus('Failed to load friends', 'error');
     }
 }
 
-// Display contacts
-function displayContacts() {
-    const contactsList = document.getElementById('contactsList');
-    contactsList.innerHTML = '';
+// Display friends
+function displayFriends() {
+    const friendsList = document.getElementById('friendsList');
+    friendsList.innerHTML = '';
     
-    if (contacts.length === 0) {
-        contactsList.innerHTML = '<li class="no-contacts">No contacts yet. Add some friends!</li>';
+    if (friends.length === 0) {
+        friendsList.innerHTML = '<li class="no-results">No friends yet. Add some friends!</li>';
         return;
     }
     
-    contacts.forEach(contact => {
+    friends.forEach(friend => {
         const li = document.createElement('li');
         li.className = 'contact-item';
         li.innerHTML = `
             <div class="contact-info">
-                <div class="contact-avatar">${contact.username.charAt(0).toUpperCase()}</div>
+                <div class="contact-avatar">${friend.username.charAt(0).toUpperCase()}</div>
                 <div class="contact-details">
-                    <h4>${contact.username}</h4>
-                    <p>${contact.email}</p>
+                    <h4>${friend.username}</h4>
+                    <p>${friend.email}</p>
                 </div>
             </div>
             <div class="contact-actions">
-                <button class="action-btn primary" onclick="selectRecipient('${contact.username}')">Chat</button>
-                <button class="action-btn danger" onclick="showUserActions('${contact.contactId}', '${contact.username}')">⋯</button>
+                <button class="action-btn primary" onclick="startChatWithUser('${friend.username}')">Chat</button>
+                <button class="action-btn danger" onclick="removeFriend('${friend.id}')">Remove</button>
             </div>
         `;
-        contactsList.appendChild(li);
+        friendsList.appendChild(li);
     });
 }
 
@@ -387,14 +366,22 @@ async function loadFriendRequests() {
             }, 10000)
         ]);
         
+        // Handle incoming requests
         if (incomingResponse.ok) {
             const incomingData = await incomingResponse.json();
             friendRequests.incoming = incomingData.data.requests || [];
+        } else {
+            console.error('Failed to load incoming requests:', incomingResponse.status);
+            friendRequests.incoming = [];
         }
         
+        // Handle outgoing requests
         if (outgoingResponse.ok) {
             const outgoingData = await outgoingResponse.json();
             friendRequests.outgoing = outgoingData.data.requests || [];
+        } else {
+            console.error('Failed to load outgoing requests:', outgoingResponse.status);
+            friendRequests.outgoing = [];
         }
         
         displayFriendRequests();
@@ -402,6 +389,9 @@ async function loadFriendRequests() {
     } catch (error) {
         logError('Load Friend Requests', error);
         showConnectionStatus('Failed to load friend requests', 'error');
+        // Reset requests on error
+        friendRequests.incoming = [];
+        friendRequests.outgoing = [];
     }
 }
 
@@ -416,7 +406,7 @@ function displayIncomingRequests() {
     list.innerHTML = '';
     
     if (friendRequests.incoming.length === 0) {
-        list.innerHTML = '<li class="no-requests">No incoming requests</li>';
+        list.innerHTML = '<li class="no-results">No incoming requests</li>';
         return;
     }
     
@@ -426,10 +416,10 @@ function displayIncomingRequests() {
         li.innerHTML = `
             <div class="request-header">
                 <div class="request-user">
-                    <div class="request-avatar">${request.fromUser.username.charAt(0).toUpperCase()}</div>
+                    <div class="request-avatar">${request.sender.username.charAt(0).toUpperCase()}</div>
                     <div class="request-details">
-                        <h4>${request.fromUser.username}</h4>
-                        <p>${request.fromUser.email}</p>
+                        <h4>${request.sender.username}</h4>
+                        <p>${request.sender.email}</p>
                     </div>
                 </div>
                 <div class="request-actions">
@@ -448,7 +438,7 @@ function displayOutgoingRequests() {
     list.innerHTML = '';
     
     if (friendRequests.outgoing.length === 0) {
-        list.innerHTML = '<li class="no-requests">No outgoing requests</li>';
+        list.innerHTML = '<li class="no-results">No outgoing requests</li>';
         return;
     }
     
@@ -458,10 +448,10 @@ function displayOutgoingRequests() {
         li.innerHTML = `
             <div class="request-header">
                 <div class="request-user">
-                    <div class="request-avatar">${request.toUser.username.charAt(0).toUpperCase()}</div>
+                    <div class="request-avatar">${request.receiver.username.charAt(0).toUpperCase()}</div>
                     <div class="request-details">
-                        <h4>${request.toUser.username}</h4>
-                        <p>${request.toUser.email}</p>
+                        <h4>${request.receiver.username}</h4>
+                        <p>${request.receiver.email}</p>
                     </div>
                 </div>
                 <div class="request-actions">
@@ -474,20 +464,7 @@ function displayOutgoingRequests() {
     });
 }
 
-// Show contact modal
-function showContactModal() {
-    document.getElementById('contactModal').classList.remove('hidden');
-    document.getElementById('userSearchInput').focus();
-}
-
-// Hide contact modal
-function hideContactModal() {
-    document.getElementById('contactModal').classList.add('hidden');
-    document.getElementById('userSearchInput').value = '';
-    document.getElementById('searchResults').innerHTML = '';
-}
-
-// Search users
+// Search users function
 async function searchUsers() {
     const query = document.getElementById('userSearchInput').value.trim();
     
@@ -510,6 +487,11 @@ async function searchUsers() {
         const data = await response.json();
         displaySearchResults(data.data.users || []);
         
+        // Show message if no users found
+        if (data.data.users && data.data.users.length === 0) {
+            showConnectionStatus('No users found matching your search', 'info');
+        }
+        
     } catch (error) {
         logError('Search Users', error);
         showConnectionStatus('Search failed. Please try again.', 'error');
@@ -531,14 +513,14 @@ function displaySearchResults(users) {
         div.className = 'search-result-item';
         
         let actionButton = '';
-        if (user.relationship === 'contact') {
+        if (user.relationshipStatus === 'friend') {
             actionButton = '<button class="search-result-btn secondary" disabled>Already Friends</button>';
-        } else if (user.relationship === 'pending' && user.relationship.isOutgoing) {
+        } else if (user.relationshipStatus === 'outgoing_request') {
             actionButton = '<button class="search-result-btn secondary" disabled>Request Sent</button>';
-        } else if (user.relationship === 'pending' && !user.relationship.isOutgoing) {
-            actionButton = '<button class="search-result-btn primary" onclick="acceptFriendRequestFromSearch(\'' + user.id + '\')">Accept Request</button>';
+        } else if (user.relationshipStatus === 'incoming_request') {
+            actionButton = `<button class="search-result-btn primary" onclick="acceptFriendRequestFromSearch('${user.id}')">Accept Request</button>`;
         } else {
-            actionButton = '<button class="search-result-btn primary" onclick="sendFriendRequest(\'' + user.id + '\')">Add Friend</button>';
+            actionButton = `<button class="search-result-btn primary" onclick="sendFriendRequest('${user.id}')">Add Friend</button>`;
         }
         
         div.innerHTML = `
@@ -551,7 +533,6 @@ function displaySearchResults(users) {
             </div>
             <div class="search-result-actions">
                 ${actionButton}
-                <button class="search-result-btn secondary" onclick="showUserActions('${user.id}', '${user.username}')">Actions</button>
             </div>
         `;
         resultsContainer.appendChild(div);
@@ -575,12 +556,24 @@ async function sendFriendRequest(userId) {
         }
         
         showConnectionStatus('Friend request sent!', 'success');
-        searchUsers(); // Refresh search results
+        
+        // Refresh search results
+        searchUsers();
+        
+        // Reload friend requests to update the UI
+        loadFriendRequests();
         
     } catch (error) {
         logError('Send Friend Request', error);
         showConnectionStatus(error.message || 'Failed to send friend request', 'error');
     }
+}
+
+// Accept friend request from search
+async function acceptFriendRequestFromSearch(userId) {
+    // This would need to be implemented to get the actual request ID
+    // For now, we'll just show a message
+    showConnectionStatus('Please go to the Requests tab to accept friend requests', 'info');
 }
 
 // Accept friend request
@@ -600,8 +593,8 @@ async function acceptFriendRequest(requestId) {
         
         showConnectionStatus('Friend request accepted!', 'success');
         loadFriendRequests(); // Refresh requests
-        loadContacts(); // Refresh contacts
-        rebuildRecipientOptions(); // Update recipient dropdown
+        loadFriends(); // Refresh friends list
+
         
     } catch (error) {
         logError('Accept Friend Request', error);
@@ -656,34 +649,14 @@ async function cancelFriendRequest(requestId) {
     }
 }
 
-// Show user actions modal
-function showUserActions(userId, username) {
-    selectedUserId = userId;
-    document.getElementById('userActionsTitle').textContent = `Actions for ${username}`;
+// Remove friend
+async function removeFriend(friendId) {
+    if (!confirm('Are you sure you want to remove this friend?')) {
+        return;
+    }
     
-    const actionsList = document.createElement('ul');
-    actionsList.className = 'user-actions-list';
-    actionsList.innerHTML = `
-        <li onclick="removeContact('${userId}')">Remove from Contacts</li>
-        <li onclick="blockUser('${userId}')">Block User</li>
-        <li onclick="showReportModal('${userId}', '${username}')" class="danger">Report User</li>
-    `;
-    
-    document.getElementById('userActionsContent').innerHTML = '';
-    document.getElementById('userActionsContent').appendChild(actionsList);
-    document.getElementById('userActionsModal').classList.remove('hidden');
-}
-
-// Hide user actions modal
-function hideUserActionsModal() {
-    document.getElementById('userActionsModal').classList.add('hidden');
-    selectedUserId = null;
-}
-
-// Remove contact
-async function removeContact(contactId) {
     try {
-        const response = await fetchWithTimeout(`/api/v1/contacts/${contactId}/remove`, {
+        const response = await fetchWithTimeout(`/api/v1/contacts/friend/${friendId}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${accessToken}`
@@ -694,99 +667,48 @@ async function removeContact(contactId) {
             throw new Error(`Remove failed: ${response.status}`);
         }
         
-        showConnectionStatus('Contact removed', 'success');
-        hideUserActionsModal();
-        loadContacts(); // Refresh contacts
-        rebuildRecipientOptions(); // Update recipient dropdown
+        showConnectionStatus('Friend removed', 'success');
+        loadFriends(); // Refresh friends list
+        loadFriendRequests(); // Refresh requests if needed
         
     } catch (error) {
-        logError('Remove Contact', error);
-        showConnectionStatus('Failed to remove contact', 'error');
+        logError('Remove Friend', error);
+        showConnectionStatus('Failed to remove friend', 'error');
     }
 }
 
-// Block user
-async function blockUser(userId) {
-    if (!confirm('Are you sure you want to block this user? This will remove them from your contacts and prevent future communication.')) {
+// Start chat with a user
+function startChatWithUser(username) {
+    currentChatRecipient = username;
+    clearChat();
+    addSystemMessage(`Started chat with ${username}`);
+}
+
+// Update user list to show only friends
+function updateUserList(users) {
+    const userListDiv = document.getElementById('userList');
+    const userCountSpan = document.getElementById('userCount');
+    
+    userListDiv.innerHTML = '';
+    userCountSpan.textContent = users.length;
+    
+    // Show message if no friends are online
+    if (users.length === 0) {
+        userListDiv.innerHTML = '<div class="no-results">No friends online currently</div>';
         return;
     }
     
-    try {
-        const response = await fetchWithTimeout(`/api/v1/contacts/${userId}/block`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ reason: 'User blocked via contact management' })
-        }, 10000);
-        
-        if (!response.ok) {
-            throw new Error(`Block failed: ${response.status}`);
+    users.forEach(username => {
+        if (username !== currentUser) {
+            const userItem = document.createElement('div');
+            userItem.className = 'user-item';
+            userItem.innerHTML = `
+                <span>${username}</span>
+                <button class="chat-btn" onclick="startChatWithUser('${username}')">Chat</button>
+            `;
+            userListDiv.appendChild(userItem);
         }
-        
-        showConnectionStatus('User blocked successfully', 'success');
-        hideUserActionsModal();
-        loadContacts(); // Refresh contacts
-        rebuildRecipientOptions(); // Update recipient dropdown
-        
-    } catch (error) {
-        logError('Block User', error);
-        showConnectionStatus('Failed to block user', 'error');
-    }
-}
-
-// Show report modal
-function showReportModal(userId, username) {
-    selectedUserId = userId;
-    document.getElementById('reportReason').value = '';
-    document.getElementById('reportModal').classList.remove('hidden');
-    hideUserActionsModal();
-}
-
-// Hide report modal
-function hideReportModal() {
-    document.getElementById('reportModal').classList.add('hidden');
-    selectedUserId = null;
-}
-
-// Submit report
-async function submitReport() {
-    const reason = document.getElementById('reportReason').value.trim();
-    
-    if (!reason || reason.length < 10) {
-        showConnectionStatus('Please provide a detailed reason (at least 10 characters)', 'warning');
-        return;
-    }
-    
-    try {
-        const response = await fetchWithTimeout(`/api/v1/contacts/${selectedUserId}/report`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ reason })
-        }, 10000);
-        
-        if (!response.ok) {
-            throw new Error(`Report failed: ${response.status}`);
-        }
-        
-        showConnectionStatus('User reported successfully', 'success');
-        hideReportModal();
-        
-    } catch (error) {
-        logError('Submit Report', error);
-        showConnectionStatus('Failed to submit report', 'error');
-    }
-}
-
-// Select recipient for chat
-function selectRecipient(username) {
-    const recipientSelect = document.getElementById('recipientSelect');
-    recipientSelect.value = username;
-    showConnectionStatus(`Selected ${username} for chat`, 'success');
+    });
 }
 
 // Authentication functions
@@ -1521,13 +1443,12 @@ function setupSocketListeners() {
             onlineUsers = Array.isArray(data.users) ? data.users : [];
             updateUserList(onlineUsers);
 
-            // Fetch contacts after login and populate recipient list
+            // Fetch friends after login
             try {
-                await fetchAndSetContacts();
-                rebuildRecipientOptions();
+                await loadFriends();
             } catch (e) {
-                logError('Contact Fetch', e);
-                showConnectionStatus('Failed to load contacts', 'warning');
+                logError('Friends Fetch', e);
+                showConnectionStatus('Failed to load friends', 'warning');
             }
         } catch (error) {
             logError('Login Success Handler', error);
@@ -1590,7 +1511,6 @@ function setupSocketListeners() {
         try {
             onlineUsers = Array.isArray(users) ? users : [];
             updateUserList(onlineUsers);
-            rebuildRecipientOptions();
         } catch (error) {
             logError('User List Handler', error);
         }
@@ -1603,10 +1523,12 @@ function setupSocketListeners() {
                 logError('Invalid User Joined', new Error('Invalid username'));
                 return;
             }
-            addSystemMessage(`${username} joined the chat`);
-            if (!onlineUsers.includes(username)) onlineUsers.push(username);
-            updateUserList(onlineUsers);
-            rebuildRecipientOptions();
+            // Only add to online users list if they are already in our friends
+            if (friends.some(friend => friend.username === username)) {
+                addSystemMessage(`${username} joined the chat`);
+                if (!onlineUsers.includes(username)) onlineUsers.push(username);
+                updateUserList(onlineUsers);
+            }
         } catch (error) {
             logError('User Joined Handler', error);
         }
@@ -1619,10 +1541,12 @@ function setupSocketListeners() {
                 logError('Invalid User Left', new Error('Invalid username'));
                 return;
             }
-            addSystemMessage(`${username} left the chat`);
-            onlineUsers = onlineUsers.filter(u => u !== username);
-            updateUserList(onlineUsers);
-            rebuildRecipientOptions();
+            // Only remove from online users list if they were in our friends
+            if (friends.some(friend => friend.username === username)) {
+                addSystemMessage(`${username} left the chat`);
+                onlineUsers = onlineUsers.filter(u => u !== username);
+                updateUserList(onlineUsers);
+            }
         } catch (error) {
             logError('User Left Handler', error);
         }
@@ -1631,7 +1555,7 @@ function setupSocketListeners() {
 
 // Reconnection logic
 function attemptReconnection() {
-    if (reconnectAttempts >= maxReconnectAttempts) {
+    if (reconnectAttempts >= 5) {
         showConnectionStatus('Max reconnection attempts reached. Please refresh the page.', 'error');
         isReconnecting = false;
         return;
@@ -1640,7 +1564,7 @@ function attemptReconnection() {
     reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff, max 30s
     
-    showConnectionStatus(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`, 'warning');
+    showConnectionStatus(`Reconnecting... (${reconnectAttempts}/5)`, 'warning');
     
     setTimeout(() => {
         if (isReconnecting && socket) {
@@ -1665,19 +1589,25 @@ function autoLoginToSocket() {
 function sendMessage() {
     try {
         const message = messageInput.value.trim();
-        const recipient = recipientSelect.value;
         
         if (!message) {
             return;
         }
         
-        if (!recipient) {
-            showMessageError('Please select a recipient');
+        if (!currentChatRecipient) {
+            showMessageError('Please select a friend to chat with');
             return;
         }
         
-        if (recipient === currentUser) {
+        if (currentChatRecipient === currentUser) {
             showMessageError('You cannot send a message to yourself');
+            return;
+        }
+        
+        // Check if recipient is in friends list
+        const isFriend = friends.some(friend => friend.username === currentChatRecipient);
+        if (!isFriend) {
+            showMessageError('You can only chat with friends');
             return;
         }
         
@@ -1693,7 +1623,7 @@ function sendMessage() {
         
         // Emit private message event
         socket.emit('privateMessage', {
-            to: recipient,
+            to: currentChatRecipient,
             message: message
         });
         
@@ -1737,7 +1667,7 @@ async function logout() {
     clearAuthTokens();
     currentUser = '';
     messageHistory = [];
-    contacts = [];
+    friends = [];
     onlineUsers = [];
     selectedFile = null;
     isReconnecting = false;
@@ -1759,106 +1689,6 @@ function showChatSection() {
     autoLoginToSocket();
 }
 
-// Fetch contacts for current user and rebuild recipient dropdown
-async function fetchAndSetContacts() {
-    if (!currentUser || !accessToken) {
-        logError('Contact Fetch', new Error('Missing user or token'));
-        return;
-    }
-    
-    try {
-        const res = await fetchWithTimeout(`/contacts?limit=200`, {
-            headers: { 
-                'Authorization': `Bearer ${accessToken}`
-            }
-        }, 10000);
-        
-        if (!res.ok) {
-            if (res.status === 401) {
-                // Token expired, try refresh
-                try {
-                    await attemptTokenRefresh();
-                    // Retry with new token
-                    const retryRes = await fetchWithTimeout(`/contacts?limit=200`, {
-                        headers: { 
-                            'Authorization': `Bearer ${accessToken}`
-                        }
-                    }, 10000);
-                    
-                    if (retryRes.ok) {
-                        const retryJson = await retryRes.json();
-                        contacts = Array.isArray(retryJson.contacts) ? retryJson.contacts : [];
-                        return;
-                    }
-                } catch (refreshError) {
-                    logError('Contact Fetch Token Refresh', refreshError);
-                }
-            }
-            throw new Error(`Failed to load contacts: ${res.status}`);
-        }
-        
-        const json = await res.json();
-        contacts = Array.isArray(json.contacts) ? json.contacts : [];
-        
-    } catch (error) {
-        logError('Contact Fetch', error);
-        contacts = []; // Set empty array on error
-        throw error;
-    }
-}
-
-function rebuildRecipientOptions() {
-    const previouslySelected = recipientSelect.value;
-    recipientSelect.innerHTML = '<option value="">Select recipient...</option>';
-
-    // Fast lookups
-    const onlineSet = new Set(onlineUsers);
-    const contactUsernames = new Set(
-        (contacts || []).map(c => c.username).filter(Boolean)
-    );
-
-    // 1) Add contacts by username first
-    (contacts || []).forEach(contact => {
-        const username = contact && contact.username;
-        if (!username || username === currentUser) return;
-        const isOnline = onlineSet.has(username);
-        const option = document.createElement('option');
-        option.value = username; // Socket messaging uses username
-        option.textContent = isOnline ? `${username}` : `${username} (offline)`;
-        recipientSelect.appendChild(option);
-    });
-
-    // 2) Add any other online users not already in contacts (and not self)
-    (onlineUsers || []).forEach(username => {
-        if (!username || username === currentUser) return;
-        if (contactUsernames.has(username)) return; // already added from contacts
-        const option = document.createElement('option');
-        option.value = username;
-        option.textContent = `${username}`; // online by definition here
-        recipientSelect.appendChild(option);
-    });
-
-    // Restore previous selection if still available
-    if (previouslySelected && Array.from(recipientSelect.options).some(o => o.value === previouslySelected)) {
-        recipientSelect.value = previouslySelected;
-    }
-}
-
-// Update user list
-function updateUserList(users) {
-    userListDiv.innerHTML = '';
-    userCountSpan.textContent = users.length;
-    
-    users.forEach(username => {
-        if (username !== currentUser) {
-            const userItem = document.createElement('div');
-            userItem.className = 'user-item';
-            userItem.textContent = username;
-            userListDiv.appendChild(userItem);
-        }
-    });
-}
-
 // Add message to chat
 function addMessageToChat(message, type) {
     const messageDiv = document.createElement('div');
@@ -1871,7 +1701,7 @@ function addMessageToChat(message, type) {
     
     const headerDiv = document.createElement('div');
     headerDiv.className = 'message-header';
-    headerDiv.textContent = `${message.from} → ${message.to} • ${formatTime(message.timestamp)}`;
+    headerDiv.textContent = `${message.from} • ${formatTime(message.timestamp)}`;
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
@@ -1949,8 +1779,6 @@ function addSystemMessage(message) {
     chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
 }
 
-// These functions are now handled by showAuthError and clearAuthError
-
 // Show message error
 function showMessageError(message) {
     // Create a temporary error message
@@ -1983,9 +1811,6 @@ function clearChat() {
 function clearUserList() {
     userListDiv.innerHTML = '';
     userCountSpan.textContent = '0';
-    
-    // Clear recipient select except first option
-    recipientSelect.innerHTML = '<option value="">Select recipient...</option>';
 }
 
 // Handle file selection
@@ -2031,16 +1856,24 @@ async function uploadAndSendFile() {
         return;
     }
     
-    const recipient = recipientSelect.value;
+    const recipient = currentChatRecipient;
     if (!recipient) {
         console.log('❌ No recipient selected');
-        showMessageError('Please select a recipient');
+        showMessageError('Please select a friend to chat with');
         return;
     }
     
     if (recipient === currentUser) {
         console.log('❌ Cannot send to self');
         showMessageError('You cannot send a file to yourself');
+        return;
+    }
+    
+    // Check if recipient is in friends list
+    const isFriend = friends.some(friend => friend.username === recipient);
+    if (!isFriend) {
+        console.log('❌ Cannot send to non-friend');
+        showMessageError('You can only send files to friends');
         return;
     }
     

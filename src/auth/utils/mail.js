@@ -151,7 +151,7 @@ const emailVerificationMailContent = (username, otp) => {
       },
       outro: [
         "If you didn't request this email, you can safely ignore it.",
-        "Need help? Just reply to this email, we'd love to help."
+        "Do not reply to this email."
       ]
     },
   };
@@ -179,7 +179,7 @@ const forgotPasswordMailContent = (username, otp) => {
       outro: [
         "If you didn't request a password reset, you can safely ignore this email.",
         "For security reasons, please do not share this code with anyone.",
-        "Need help? Just reply to this email, we'd love to help."
+        "Do not reply to this email."
       ]
     },
   };
