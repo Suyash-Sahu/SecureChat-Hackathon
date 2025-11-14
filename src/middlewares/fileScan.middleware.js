@@ -3,6 +3,7 @@ import { extname } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as Jimp from 'jimp';
+import fileQuarantineService from '../services/fileQuarantine.service.js';
 
 const execPromise = promisify(exec);
 
@@ -537,6 +538,31 @@ async function fileScanMiddleware(req, res, next) {
             
             // Step 4: Handle scan results
             if (scanResult && scanResult.blocked) {
+                // Generate a SHA-256 hash of the file for anchoring
+                const fileHash = await generateFileHash(filePath);
+                
+                // Anchor the suspicious file event to the SentryChain blockchain
+                try {
+                    const quarantineResult = fileQuarantineService.anchorSuspiciousFileEvent({
+                        eventType: "FILE_QUARANTINED",
+                        fileHash: `sha256:${fileHash}`,
+                        fileName: req.file.originalname,
+                        uploaderId: req.user ? req.user._id : 'unknown',
+                        conversationId: req.body.conversationId || 'unknown',
+                        filePath: filePath,
+                        scanReport: {
+                            method: scanResult.code,
+                            reason: scanResult.reason,
+                            blocked: true
+                        }
+                    });
+                    
+                    console.log(`🔒 Suspicious file quarantined and anchored to blockchain with ID: ${quarantineResult.quarantineId}`);
+                } catch (anchorError) {
+                    console.error('❌ Failed to anchor suspicious file event to blockchain:', anchorError);
+                    // Continue with file deletion even if anchoring fails
+                }
+                
                 // Delete the suspicious file
                 try {
                     await fs.unlink(filePath);
@@ -572,6 +598,20 @@ async function fileScanMiddleware(req, res, next) {
     } catch (error) {
         console.error('Middleware error:', error);
         return next(error);
+    }
+}
+
+// Helper function to generate SHA-256 hash of a file
+async function generateFileHash(filePath) {
+    try {
+        const crypto = await import('crypto');
+        const fileBuffer = await fs.readFile(filePath);
+        const hashSum = crypto.createHash('sha256');
+        hashSum.update(fileBuffer);
+        return hashSum.digest('hex');
+    } catch (error) {
+        console.error('Error generating file hash:', error);
+        return 'hash_generation_failed';
     }
 }
 

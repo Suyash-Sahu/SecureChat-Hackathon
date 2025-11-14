@@ -19,6 +19,9 @@ import e2eeRouter from './routes/e2ee.routes.js';
 // AI routes
 import aiRouter from './routes/ai.routes.js';
 
+// SentryChain routes
+import sentryChainRouter from './routes/sentrychain.routes.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -82,6 +85,9 @@ app.use('/api/v1/contacts', contactRouter);
 
 // E2EE routes
 app.use('/api/v1/e2ee', e2eeRouter);
+
+// SentryChain routes
+app.use('/api/v1/chain', sentryChainRouter);
 
 // AI routes
 app.use('/api/v1/ai', aiRouter);

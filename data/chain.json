@@ -1,0 +1,249 @@
+{
+  "chain": [
+    {
+      "index": 0,
+      "timestamp": 1763150858368,
+      "data": "GENESIS_BLOCK",
+      "previousHash": "0",
+      "hash": "b2145eefa640be63607357618f755a78db7e6b0ae0fd812397013eb42f83cd0e"
+    },
+    {
+      "index": 1,
+      "timestamp": 1763150858376,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:abcd1234...",
+        "fileName": "suspicious-image.png",
+        "uploaderId": "user_21",
+        "conversationId": "c_54",
+        "quarantineId": "q_77"
+      },
+      "previousHash": "b2145eefa640be63607357618f755a78db7e6b0ae0fd812397013eb42f83cd0e",
+      "hash": "4f5b0a090cca3c6665cdb98df6cd91a884ca9781d3c056eaadf60a637cb7b6af"
+    },
+    {
+      "index": 2,
+      "timestamp": 1763150858383,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_0...",
+        "fileName": "concurrent-file-0.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "4f5b0a090cca3c6665cdb98df6cd91a884ca9781d3c056eaadf60a637cb7b6af",
+      "hash": "0cbad9573e0b4828448d7eb43aac5ec5d05533ddc9bcb9db2b0889a5d3f2119e"
+    },
+    {
+      "index": 3,
+      "timestamp": 1763150858385,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_1...",
+        "fileName": "concurrent-file-1.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "0cbad9573e0b4828448d7eb43aac5ec5d05533ddc9bcb9db2b0889a5d3f2119e",
+      "hash": "7d51591ea777ffa58dcb7075f23816148a3dab307fec0c3c28cb7c0db97a192b"
+    },
+    {
+      "index": 4,
+      "timestamp": 1763150858386,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_2...",
+        "fileName": "concurrent-file-2.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "7d51591ea777ffa58dcb7075f23816148a3dab307fec0c3c28cb7c0db97a192b",
+      "hash": "b2a16c96ebfaee835c9b7b56055eb005b153c356f87b90143235ab9ed6cd274e"
+    },
+    {
+      "index": 5,
+      "timestamp": 1763150858388,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_3...",
+        "fileName": "concurrent-file-3.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "b2a16c96ebfaee835c9b7b56055eb005b153c356f87b90143235ab9ed6cd274e",
+      "hash": "8fbe432166dda2214819cc24a634ba90a23066c9fe379f79862dc5e92b7f09fa"
+    },
+    {
+      "index": 6,
+      "timestamp": 1763150858389,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_4...",
+        "fileName": "concurrent-file-4.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "8fbe432166dda2214819cc24a634ba90a23066c9fe379f79862dc5e92b7f09fa",
+      "hash": "b70c5bf2c30a7c542eb713162a1f02191925ab32c399d8babe6b1f3a55c919cf"
+    },
+    {
+      "index": 7,
+      "timestamp": 1763150863413,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:a1b2c3d4e5f6...",
+        "fileName": "suspicious-document.pdf",
+        "uploaderId": "user_123",
+        "conversationId": "conv_456",
+        "quarantineId": "q_3fadd095",
+        "scanReport": {
+          "method": "PDF_STREAM_BLOCKED",
+          "reason": "Low entropy stream detected",
+          "blocked": true
+        },
+        "timestamp": 1763150863412
+      },
+      "previousHash": "b70c5bf2c30a7c542eb713162a1f02191925ab32c399d8babe6b1f3a55c919cf",
+      "hash": "3226cf1db914fbc4f34f448a4ab0806aaed61cdb22e7fed4360379b3046e68c9"
+    },
+    {
+      "index": 8,
+      "timestamp": 1763150863416,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:f1e2d3c4b5a6...",
+        "fileName": "hidden-message.png",
+        "uploaderId": "user_123",
+        "conversationId": "conv_789",
+        "quarantineId": "q_5ffe97df",
+        "scanReport": {
+          "method": "LSB_BLOCKED",
+          "reason": "LSB steganography detected",
+          "blocked": true
+        },
+        "timestamp": 1763150863415
+      },
+      "previousHash": "3226cf1db914fbc4f34f448a4ab0806aaed61cdb22e7fed4360379b3046e68c9",
+      "hash": "fd60542420c06d64d7caafaa293d587d4ab692f7371c3e0b6b32c48da83bb249"
+    },
+    {
+      "index": 9,
+      "timestamp": 1763150940326,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:abcd1234...",
+        "fileName": "suspicious-image.png",
+        "uploaderId": "user_21",
+        "conversationId": "c_54",
+        "quarantineId": "q_77"
+      },
+      "previousHash": "fd60542420c06d64d7caafaa293d587d4ab692f7371c3e0b6b32c48da83bb249",
+      "hash": "14d23363352f74fad58a356646344e31f4771eda87f0a1857e61052dea7fb6fd"
+    },
+    {
+      "index": 10,
+      "timestamp": 1763150940335,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_0...",
+        "fileName": "concurrent-file-0.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "14d23363352f74fad58a356646344e31f4771eda87f0a1857e61052dea7fb6fd",
+      "hash": "c5f07351e0273ee31321ac48f9cce814dc7912d5b7aaa34f9b35b63147eba9d1"
+    },
+    {
+      "index": 11,
+      "timestamp": 1763150940337,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_1...",
+        "fileName": "concurrent-file-1.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "c5f07351e0273ee31321ac48f9cce814dc7912d5b7aaa34f9b35b63147eba9d1",
+      "hash": "b3b655a02c89e58fc8285c62e26d8d1e558f1393e3ada185d3ce07a505dddb46"
+    },
+    {
+      "index": 12,
+      "timestamp": 1763150940339,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_2...",
+        "fileName": "concurrent-file-2.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "b3b655a02c89e58fc8285c62e26d8d1e558f1393e3ada185d3ce07a505dddb46",
+      "hash": "1b8f6776bae1875a53437ebdc295314eb82edcb7e526a83f3cdd0c688e5fc63b"
+    },
+    {
+      "index": 13,
+      "timestamp": 1763150940341,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_3...",
+        "fileName": "concurrent-file-3.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "1b8f6776bae1875a53437ebdc295314eb82edcb7e526a83f3cdd0c688e5fc63b",
+      "hash": "b2542c7ca226e09728675b9a5b323e97210be057b74aa1d28ff406c9b825185c"
+    },
+    {
+      "index": 14,
+      "timestamp": 1763150940343,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:concurrent_4...",
+        "fileName": "concurrent-file-4.png",
+        "uploaderId": "user_concurrent",
+        "conversationId": "c_concurrent"
+      },
+      "previousHash": "b2542c7ca226e09728675b9a5b323e97210be057b74aa1d28ff406c9b825185c",
+      "hash": "14f2e7654b3bd40cd57a4ad976d50d60ceb7c913bd81a39a05c2f599062835a7"
+    },
+    {
+      "index": 15,
+      "timestamp": 1763151423253,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:a32184cbffd58ad6626fdcfec2f94f7ccb55120798b291556992367ac1843e5b",
+        "fileName": "lsb_encoded_P.png",
+        "uploaderId": "unknown",
+        "conversationId": "unknown",
+        "quarantineId": "q_5f27ead4",
+        "scanReport": {
+          "method": "LSB_BLOCKED",
+          "reason": "LSB steganography detected",
+          "blocked": true
+        },
+        "timestamp": 1763151423251
+      },
+      "previousHash": "14f2e7654b3bd40cd57a4ad976d50d60ceb7c913bd81a39a05c2f599062835a7",
+      "hash": "6f309cc044eb27fba600a74095f3fb3802df251053c41ecd7a98d165cef9ee14"
+    },
+    {
+      "index": 16,
+      "timestamp": 1763152646819,
+      "data": {
+        "eventType": "FILE_QUARANTINED",
+        "fileHash": "sha256:a32184cbffd58ad6626fdcfec2f94f7ccb55120798b291556992367ac1843e5b",
+        "fileName": "lsb_encoded_P.png",
+        "uploaderId": "unknown",
+        "conversationId": "unknown",
+        "quarantineId": "q_abc119f0",
+        "scanReport": {
+          "method": "LSB_BLOCKED",
+          "reason": "LSB steganography detected",
+          "blocked": true
+        },
+        "timestamp": 1763152646818
+      },
+      "previousHash": "6f309cc044eb27fba600a74095f3fb3802df251053c41ecd7a98d165cef9ee14",
+      "hash": "bd9733ed28fdb8e5243158fc5165432b85a0e76ed2f07e9bc403de14dbf2888f"
+    }
+  ]
+}

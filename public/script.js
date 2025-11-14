@@ -2560,12 +2560,18 @@ function sendMessage() {
             return;
         }
         
+        // Check if we're chatting with AI (do this check first to bypass other validations)
+        if (currentChatRecipient === 'AI Assistant') {
+            sendAiMessageToBackend(message);
+            return;
+        }
+        
         if (currentChatRecipient === currentUser) {
             showMessageError('You cannot send a message to yourself');
             return;
         }
         
-        // Check if recipient is in friends list
+        // Check if recipient is in friends list (only for real users, not AI)
         const isFriend = friends.some(friend => friend.username === currentChatRecipient);
         if (!isFriend) {
             showMessageError('You can only chat with friends');
