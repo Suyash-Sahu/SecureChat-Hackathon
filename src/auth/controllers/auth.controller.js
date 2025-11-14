@@ -2,7 +2,7 @@ import { User } from "../models/user.models.js"
 import { ApiResponse } from "../utils/api-response.js"
 import { ApiError } from "../utils/api-error.js"
 import { asyncHandler } from "../utils/async-handler.js"
-import { emailVerificationMailContent, forgotPasswordMailContent, sendEmail } from "../utils/mail.js"
+import { emailVerificationMailContent, forgotPasswordMailContent, sendEmail, sendHighPriorityEmail } from "../utils/enhanced-mail.js"
 import jwt from "jsonwebtoken"
 import crypto from "crypto";
 import { generateNumericOtp, hashOtp, isCooldownActive, isExpired, verifyOtp } from "../utils/otp.js";
@@ -192,103 +192,40 @@ const registerUser = asyncHandler(async (req, res) => {
             };
 
             console.log('Sending verification email to:', user.email);
-            await sendEmail(emailContent);
+            // Use high priority for registration emails
+            await sendHighPriorityEmail(emailContent);
             console.log('Verification email sent successfully');
             
         } catch (error) {
             console.error('Error during registration:', {
                 message: error.message,
-                stack: error.stack,
-                code: error.code,
-                response: error.response,
-                request: error.config ? {
-                    url: error.config.url,
-                    method: error.config.method,
-                    headers: error.config.headers,
-                    data: error.config.data
-                } : 'No request config',
-                fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+                stack: error.stack
             });
-            
-            // More specific error messages based on error type
-            if (error.code === 'EAUTH' || error.responseCode) {
-                // Even if email fails, we still create the user and let them request OTP later
-                console.log('Email failed but user created successfully. User can request OTP later.');
-                const createdUser = await User.findById(user._id).select(
-                    "-password -refreshToken -emailVerificationToken -emailVerificationExpiry"
-                )
-
-                if (!createdUser) {
-                    throw new ApiError(500, "Failed to retrieve created user")
-                }
-
-                return res
-                    .status(201)
-                    .json(
-                        new ApiResponse(
-                            201,
-                            { user: createdUser },
-                            "User registered successfully. Please check your email for the verification code, or request a new one if you don't receive it."
-                        )
-                    )
-            }
-            
-            throw new ApiError(500, 'Failed to complete registration. Please try again.');
+            // Even if email fails, we still create the user
+            // They can request a new OTP later
         }
-
-        const createdUser = await User.findById(user._id).select(
-            "-password -refreshToken -emailVerificationToken -emailVerificationExpiry"
-        )
-
-        if (!createdUser) {
-            throw new ApiError(500, "Failed to retrieve created user")
-        }
-
-        return res
-            .status(201)
-            .json(
-                new ApiResponse(
-                    201,
-                    { user: createdUser },
-                    "User registered successfully. Please verify your email with the OTP sent."
-                )
+        
+        // Return success response immediately without waiting for email
+        return res.status(201).json(
+            new ApiResponse(
+                201,
+                {
+                    user: {
+                        id: user._id,
+                        email: user.email,
+                        username: user.username,
+                        isEmailVerified: user.isEmailVerified
+                    }
+                },
+                "User registered successfully. Please check your email for verification code."
             )
+        );
     } catch (error) {
-        console.error('Registration error:', {
-            message: error.message,
-            stack: error.stack,
-            name: error.name,
-            code: error.code,
-            keyValue: error.keyValue
-        });
-        
-        // Handle duplicate key errors (MongoDB)
-        if (error.name === 'MongoServerError' && error.code === 11000) {
-            const field = Object.keys(error.keyValue)[0];
-            throw new ApiError(409, `${field} '${error.keyValue[field]}' is already registered`);
-        }
-        
-        // Handle validation errors
-        if (error.name === 'ValidationError') {
-            const messages = Object.values(error.errors).map(val => val.message);
-            throw new ApiError(400, `Validation failed: ${messages.join(', ')}`);
-        }
-        
-        // Handle rate limit errors
-        if (error.name === 'TooManyRequestsError' || (error.code && error.code === 'TOO_MANY_REQUESTS')) {
-            throw new ApiError(429, "Too many registration requests. Please wait a moment and try again.");
-        }
-        
+        console.error('Registration error:', error);
         if (error instanceof ApiError) {
             throw error;
         }
-        
-        // Return a more detailed error in development
-        const errorMessage = process.env.NODE_ENV === 'development' 
-            ? `Registration failed: ${error.message}`
-            : 'Server error. Please try again later.';
-            
-        throw new ApiError(500, errorMessage);
+        throw new ApiError(500, "Internal server error during registration");
     }
 })
 
@@ -475,13 +412,13 @@ const login = asyncHandler(async (req, res) => {
                 try {
                     await user.save({ validateBeforeSave: false });
                     
-                    // Send the new OTP via email
+                    // Send the new OTP via email with normal priority
                     await sendEmail({
                         email: user.email,
                         subject: 'New Verification Code - Secure Chat',
                         mailgenContent: emailVerificationMailContent(
                             user.username,
-                            otp // Pass only the OTP, not a verification URL
+                            otp
                         )
                     });
                 } catch (saveError) {
@@ -731,8 +668,8 @@ const forgotPasswordRequest = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     try {
-        // Send the OTP via email
-        await sendEmail({
+        // Send the OTP via email with high priority for password reset
+        await sendHighPriorityEmail({
             email: user.email,
             subject: "Password Reset OTP - Secure Chat",
             mailgenContent: forgotPasswordMailContent(

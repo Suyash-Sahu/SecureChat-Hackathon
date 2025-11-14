@@ -15,6 +15,9 @@ let friendRequests = {
     outgoing: []
 };
 
+// Global variables for AI chat
+let aiConversationHistory = [];
+
 // DOM elements
 const authSection = document.getElementById('authSection');
 const chatSection = document.getElementById('chatSection');
@@ -182,6 +185,50 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Set up DOM event listeners
 function setupEventListeners() {
+    // Login form
+    document.getElementById('loginBtn').addEventListener('click', login);
+    document.getElementById('showRegisterLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        showRegister();
+    });
+    document.getElementById('showForgotPasswordLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        showForgotPassword();
+    });
+    
+    // Register form
+    document.getElementById('registerBtn').addEventListener('click', register);
+    document.getElementById('showLoginLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        showLogin();
+    });
+    
+    // OTP form
+    document.getElementById('verifyOtpBtn').addEventListener('click', verifyOtp);
+    document.getElementById('resendOtpBtn').addEventListener('click', resendOtp);
+    document.getElementById('backToLoginLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        showLogin();
+    });
+    
+    // Forgot password form
+    document.getElementById('forgotBtn').addEventListener('click', forgotPassword);
+    document.getElementById('backToLoginFromForgotLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        showLogin();
+    });
+    
+    // Reset password form
+    document.getElementById('resetPasswordBtn').addEventListener('click', resetPassword);
+    document.getElementById('backToForgotLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        showForgotPassword();
+    });
+    document.getElementById('showLoginFromResetLink').addEventListener('click', function(e) {
+        e.preventDefault();
+        showLogin();
+    });
+    
     // Enter key in login form
     document.getElementById('loginEmail').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
@@ -248,7 +295,7 @@ function setupEventListeners() {
     // Logout button
     logoutBtn.addEventListener('click', logout);
     
-    // Tab switching
+    // Tab switching (removed AI chat tab)
     document.getElementById('onlineUsersTab').addEventListener('click', () => switchTab('onlineUsers'));
     document.getElementById('contactsTab').addEventListener('click', () => switchTab('contacts'));
     document.getElementById('requestsTab').addEventListener('click', () => switchTab('requests'));
@@ -257,6 +304,21 @@ function setupEventListeners() {
     // Request tabs
     document.getElementById('incomingRequestsTab').addEventListener('click', () => switchRequestTab('incoming'));
     document.getElementById('outgoingRequestsTab').addEventListener('click', () => switchRequestTab('outgoing'));
+    
+    // Add friend button
+    document.getElementById('addFriendButton').addEventListener('click', () => switchTab('addContact'));
+    
+    // Search button
+    document.getElementById('searchUsersBtn').addEventListener('click', searchUsers);
+    
+    // File upload buttons
+    document.getElementById('attachBtn').addEventListener('click', function() {
+        document.getElementById('fileInput').click();
+    });
+    document.getElementById('uploadBtn').addEventListener('click', uploadAndSendFile);
+    
+    // Send message button
+    document.getElementById('sendBtn').addEventListener('click', sendMessage);
     
     // Modal close buttons
     document.getElementById('closeUserActionsModal').addEventListener('click', hideUserActionsModal);
@@ -286,6 +348,602 @@ function switchTab(tabName) {
     } else if (tabName === 'addContact') {
         document.getElementById('userSearchInput').focus();
     }
+}
+
+// Request tab switching
+function switchRequestTab(tabName) {
+    // Hide all request panels
+    document.querySelectorAll('.request-panel').forEach(panel => {
+        panel.classList.remove('active');
+    });
+    
+    // Remove active class from all request buttons
+    document.querySelectorAll('.request-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Show selected request panel
+    document.getElementById(tabName + 'RequestsContent').classList.add('active');
+    document.getElementById(tabName + 'RequestsTab').classList.add('active');
+}
+
+// Show login form
+function showLogin() {
+    authSection.style.display = 'block';
+    chatSection.style.display = 'none';
+    loginForm.style.display = 'block';
+    registerForm.style.display = 'none';
+    otpForm.style.display = 'none';
+    forgotPasswordForm.style.display = 'none';
+    resetPasswordForm.style.display = 'none';
+}
+
+// Show register form
+function showRegister() {
+    authSection.style.display = 'block';
+    chatSection.style.display = 'none';
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'block';
+    otpForm.style.display = 'none';
+    forgotPasswordForm.style.display = 'none';
+    resetPasswordForm.style.display = 'none';
+}
+
+// Show OTP form
+function showOtp() {
+    authSection.style.display = 'block';
+    chatSection.style.display = 'none';
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'none';
+    otpForm.style.display = 'block';
+    forgotPasswordForm.style.display = 'none';
+    resetPasswordForm.style.display = 'none';
+}
+
+// Show forgot password form
+function showForgotPassword() {
+    authSection.style.display = 'block';
+    chatSection.style.display = 'none';
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'none';
+    otpForm.style.display = 'none';
+    forgotPasswordForm.style.display = 'block';
+    resetPasswordForm.style.display = 'none';
+}
+
+// Show reset password form
+function showResetPassword() {
+    authSection.style.display = 'block';
+    chatSection.style.display = 'none';
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'none';
+    otpForm.style.display = 'none';
+    forgotPasswordForm.style.display = 'none';
+    resetPasswordForm.style.display = 'block';
+}
+
+// Show chat section
+function showChat() {
+    authSection.style.display = 'none';
+    chatSection.style.display = 'block';
+}
+
+// Handle file selection
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        selectedFile = file;
+        fileInfo.textContent = file.name;
+    } else {
+        selectedFile = null;
+        fileInfo.textContent = '';
+    }
+}
+
+// Upload and send file
+function uploadAndSendFile() {
+    if (selectedFile) {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        fetchWithTimeout('/api/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const message = {
+                    type: 'file',
+                    content: data.url,
+                    sender: currentUser,
+                    timestamp: new Date().toISOString()
+                };
+                sendMessageToServer(message);
+                messageHistory.push(message);
+                renderMessages();
+                selectedFile = null;
+                fileInfo.textContent = '';
+            } else {
+                logError('File Upload', new Error(data.message));
+            }
+        })
+        .catch(error => {
+            logError('File Upload', error);
+        });
+    }
+}
+
+// Send message to server
+function sendMessageToServer(message) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(message));
+    } else {
+        logError('WebSocket', new Error('WebSocket is not open'));
+    }
+}
+
+// Render messages in chat
+function renderMessages() {
+    chatMessagesDiv.innerHTML = '';
+    messageHistory.forEach(message => {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message';
+        messageDiv.textContent = message.content;
+        chatMessagesDiv.appendChild(messageDiv);
+    });
+}
+
+// Handle incoming messages
+function handleIncomingMessage(event) {
+    const message = JSON.parse(event.data);
+    messageHistory.push(message);
+    renderMessages();
+}
+
+// Handle WebSocket connection open
+function handleConnectionOpen() {
+    showConnectionStatus('Connected to server', 'success');
+    isReconnecting = false;
+    reconnectAttempts = 0;
+}
+
+// Handle WebSocket connection close
+function handleConnectionClose(event) {
+    showConnectionStatus('Disconnected from server', 'error');
+    if (!isReconnecting) {
+        isReconnecting = true;
+        reconnectAttempts = 0;
+        reconnectWebSocket();
+    }
+}
+
+// Handle WebSocket connection error
+function handleConnectionError(event) {
+    logError('WebSocket', new Error('WebSocket error'));
+}
+
+// Reconnect WebSocket
+function reconnectWebSocket() {
+    if (reconnectAttempts < 5) {
+        setTimeout(() => {
+            connectWebSocket();
+            reconnectAttempts++;
+        }, 1000);
+    } else {
+        showConnectionStatus('Failed to reconnect to server', 'error');
+    }
+}
+
+// Connect WebSocket
+function connectWebSocket() {
+    socket = new WebSocket('ws://localhost:3000/socket');
+    socket.onopen = handleConnectionOpen;
+    socket.onmessage = handleIncomingMessage;
+    socket.onclose = handleConnectionClose;
+    socket.onerror = handleConnectionError;
+}
+
+// Verify token and connect WebSocket
+function verifyTokenAndConnect() {
+    fetchWithTimeout('/api/verify-token', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentUser = data.user.username;
+            currentUserSpan.textContent = currentUser;
+            connectWebSocket();
+            showChat();
+        } else {
+            logError('Token Verification', new Error(data.message));
+            showLogin();
+        }
+    })
+    .catch(error => {
+        logError('Token Verification', error);
+        showLogin();
+    });
+}
+
+// Login user
+function login() {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    if (!isValidEmail(email)) {
+        authError.textContent = 'Invalid email address';
+        return;
+    }
+    fetchWithTimeout('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            accessToken = data.accessToken;
+            refreshToken = data.refreshToken;
+            localStorage.setItem('accessToken', accessToken);
+            localStorage.setItem('refreshToken', refreshToken);
+            verifyTokenAndConnect();
+        } else {
+            authError.textContent = getErrorMessage(data.status, data);
+        }
+    })
+    .catch(error => {
+        logError('Login', error);
+        authError.textContent = 'An error occurred while logging in';
+    });
+}
+
+// Register user
+function register() {
+    const username = document.getElementById('registerUsername').value;
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    if (!isValidEmail(email)) {
+        authError.textContent = 'Invalid email address';
+        return;
+    }
+    fetchWithTimeout('/api/register', {
+        method: 'POST',
+        body: JSON.stringify({ username, email, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showOtp();
+        } else {
+            authError.textContent = getErrorMessage(data.status, data);
+        }
+    })
+    .catch(error => {
+        logError('Register', error);
+        authError.textContent = 'An error occurred while registering';
+    });
+}
+
+// Verify OTP
+function verifyOtp() {
+    const otp = document.getElementById('otpInput').value;
+    fetchWithTimeout('/api/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ otp })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            accessToken = data.accessToken;
+            refreshToken = data.refreshToken;
+            localStorage.setItem('accessToken', accessToken);
+            localStorage.setItem('refreshToken', refreshToken);
+            verifyTokenAndConnect();
+        } else {
+            authError.textContent = getErrorMessage(data.status, data);
+        }
+    })
+    .catch(error => {
+        logError('Verify OTP', error);
+        authError.textContent = 'An error occurred while verifying OTP';
+    });
+}
+
+// Resend OTP
+function resendOtp() {
+    fetchWithTimeout('/api/resend-otp', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            authError.textContent = 'OTP sent successfully';
+        } else {
+            authError.textContent = getErrorMessage(data.status, data);
+        }
+    })
+    .catch(error => {
+        logError('Resend OTP', error);
+        authError.textContent = 'An error occurred while resending OTP';
+    });
+}
+
+// Forgot password
+function forgotPassword() {
+    const email = document.getElementById('forgotEmail').value;
+    if (!isValidEmail(email)) {
+        authError.textContent = 'Invalid email address';
+        return;
+    }
+    fetchWithTimeout('/api/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            authError.textContent = 'Password reset link sent successfully';
+        } else {
+            authError.textContent = getErrorMessage(data.status, data);
+        }
+    })
+    .catch(error => {
+        logError('Forgot Password', error);
+        authError.textContent = 'An error occurred while sending password reset link';
+    });
+}
+
+// Reset password
+function resetPassword() {
+    const password = document.getElementById('resetPassword').value;
+    const token = document.getElementById('resetToken').value;
+    fetchWithTimeout('/api/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ password, token })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showLogin();
+        } else {
+            authError.textContent = getErrorMessage(data.status, data);
+        }
+    })
+    .catch(error => {
+        logError('Reset Password', error);
+        authError.textContent = 'An error occurred while resetting password';
+    });
+}
+
+// Send message
+function sendMessage() {
+    const messageContent = messageInput.value.trim();
+    if (messageContent) {
+        const message = {
+            type: 'text',
+            content: messageContent,
+            sender: currentUser,
+            timestamp: new Date().toISOString()
+        };
+        sendMessageToServer(message);
+        messageHistory.push(message);
+        renderMessages();
+        messageInput.value = '';
+    }
+}
+
+// Search users
+function searchUsers() {
+    const query = document.getElementById('userSearchInput').value.trim();
+    if (query) {
+        fetchWithTimeout('/api/search-users', {
+            method: 'POST',
+            body: JSON.stringify({ query })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                userListDiv.innerHTML = '';
+                data.users.forEach(user => {
+                    const userDiv = document.createElement('div');
+                    userDiv.className = 'user';
+                    userDiv.textContent = user.username;
+                    userDiv.addEventListener('click', () => {
+                        currentChatRecipient = user.username;
+                        loadChatHistory(user.username);
+                    });
+                    userListDiv.appendChild(userDiv);
+                });
+            } else {
+                logError('Search Users', new Error(data.message));
+            }
+        })
+        .catch(error => {
+            logError('Search Users', error);
+        });
+    }
+}
+
+// Load chat history
+function loadChatHistory(recipient) {
+    fetchWithTimeout('/api/chat-history', {
+        method: 'POST',
+        body: JSON.stringify({ recipient })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            messageHistory = data.messages;
+            renderMessages();
+        } else {
+            logError('Load Chat History', new Error(data.message));
+        }
+    })
+    .catch(error => {
+        logError('Load Chat History', error);
+    });
+}
+
+// Load friends
+function loadFriends() {
+    fetchWithTimeout('/api/friends', {
+        method: 'GET'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            friends = data.friends;
+            renderFriends();
+        } else {
+            logError('Load Friends', new Error(data.message));
+        }
+    })
+    .catch(error => {
+        logError('Load Friends', error);
+    });
+}
+
+// Render friends
+function renderFriends() {
+    const friendsListDiv = document.getElementById('friendsList');
+    friendsListDiv.innerHTML = '';
+    friends.forEach(friend => {
+        const friendDiv = document.createElement('div');
+        friendDiv.className = 'friend';
+        friendDiv.textContent = friend.username;
+        friendDiv.addEventListener('click', () => {
+            currentChatRecipient = friend.username;
+            loadChatHistory(friend.username);
+        });
+        friendsListDiv.appendChild(friendDiv);
+    });
+}
+
+// Load friend requests
+function loadFriendRequests() {
+    fetchWithTimeout('/api/friend-requests', {
+        method: 'GET'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            friendRequests = data.friendRequests;
+            renderFriendRequests();
+        } else {
+            logError('Load Friend Requests', new Error(data.message));
+        }
+    })
+    .catch(error => {
+        logError('Load Friend Requests', error);
+    });
+}
+
+// Render friend requests
+function renderFriendRequests() {
+    const incomingRequestsListDiv = document.getElementById('incomingRequestsList');
+    const outgoingRequestsListDiv = document.getElementById('outgoingRequestsList');
+    incomingRequestsListDiv.innerHTML = '';
+    outgoingRequestsListDiv.innerHTML = '';
+    friendRequests.incoming.forEach(request => {
+        const requestDiv = document.createElement('div');
+        requestDiv.className = 'request';
+        requestDiv.textContent = request.username;
+        requestDiv.addEventListener('click', () => {
+            acceptFriendRequest(request.username);
+        });
+        incomingRequestsListDiv.appendChild(requestDiv);
+    });
+    friendRequests.outgoing.forEach(request => {
+        const requestDiv = document.createElement('div');
+        requestDiv.className = 'request';
+        requestDiv.textContent = request.username;
+        requestDiv.addEventListener('click', () => {
+            cancelFriendRequest(request.username);
+        });
+        outgoingRequestsListDiv.appendChild(requestDiv);
+    });
+}
+
+// Accept friend request
+function acceptFriendRequest(username) {
+    fetchWithTimeout('/api/accept-friend-request', {
+        method: 'POST',
+        body: JSON.stringify({ username })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadFriends();
+            loadFriendRequests();
+        } else {
+            logError('Accept Friend Request', new Error(data.message));
+        }
+    })
+    .catch(error => {
+        logError('Accept Friend Request', error);
+    });
+}
+
+// Cancel friend request
+function cancelFriendRequest(username) {
+    fetchWithTimeout('/api/cancel-friend-request', {
+        method: 'POST',
+        body: JSON.stringify({ username })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadFriends();
+            loadFriendRequests();
+        } else {
+            logError('Cancel Friend Request', new Error(data.message));
+        }
+    })
+    .catch(error => {
+        logError('Cancel Friend Request', error);
+    });
+}
+
+// Send AI message
+function sendAiMessage() {
+    const messageContent = document.getElementById('aiUserInput').value.trim();
+    if (messageContent) {
+        const message = {
+            type: 'text',
+            content: messageContent,
+            sender: 'AI',
+            timestamp: new Date().toISOString()
+        };
+        aiConversationHistory.push(message);
+        renderAiMessages();
+        document.getElementById('aiUserInput').value = '';
+    }
+}
+
+// Render AI messages
+function renderAiMessages() {
+    const aiMessagesDiv = document.getElementById('aiMessages');
+    aiMessagesDiv.innerHTML = '';
+    aiConversationHistory.forEach(message => {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message';
+        messageDiv.textContent = message.content;
+        aiMessagesDiv.appendChild(messageDiv);
+    });
+}
+
+// Logout user
+function logout() {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    showLogin();
+}
+
+// Hide user actions modal
+function hideUserActionsModal() {
+    document.getElementById('userActionsModal').style.display = 'none';
 }
 
 // Request tab switching
@@ -669,19 +1327,123 @@ async function removeFriend(friendId) {
         
         showConnectionStatus('Friend removed', 'success');
         loadFriends(); // Refresh friends list
-        loadFriendRequests(); // Refresh requests if needed
-        
     } catch (error) {
-        logError('Remove Friend', error);
+        console.error('Remove friend error:', error);
         showConnectionStatus('Failed to remove friend', 'error');
     }
 }
 
-// Start chat with a user
-function startChatWithUser(username) {
-    currentChatRecipient = username;
-    clearChat();
-    addSystemMessage(`Started chat with ${username}`);
+// AI Chat Functions
+
+
+// AI Chat Functions
+function getCurrentTime() {
+    const now = new Date();
+    return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function addAiMessage(message, isUser) {
+    const chatContainer = document.getElementById('aiChatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+    
+    const messageHeader = document.createElement('div');
+    messageHeader.className = 'message-header';
+    messageHeader.innerHTML = `<strong>${isUser ? 'You' : 'AI Assistant'}</strong>`;
+    
+    const timestampDiv = document.createElement('div');
+    timestampDiv.className = 'timestamp';
+    timestampDiv.textContent = getCurrentTime();
+    
+    messageDiv.appendChild(messageHeader);
+    messageDiv.appendChild(document.createTextNode(message));
+    messageDiv.appendChild(timestampDiv);
+    
+    chatContainer.appendChild(messageDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+function showAiTypingIndicator() {
+    document.getElementById('aiTypingIndicator').style.display = 'block';
+    const chatContainer = document.getElementById('aiChatMessages');
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+function hideAiTypingIndicator() {
+    document.getElementById('aiTypingIndicator').style.display = 'none';
+}
+
+// Remove the old AI functions that are no longer needed
+// The sendAiMessage, addAiMessage, showAiTypingIndicator, and hideAiTypingIndicator functions
+// have been replaced with the new integrated AI chat functionality
+
+// Update user list to show only friends
+function updateUserList(users) {
+    const userList = document.getElementById('userList');
+    userList.innerHTML = '';
+    users.forEach(user => {
+        const userElement = document.createElement('div');
+        userElement.textContent = user.name;
+        userList.appendChild(userElement);
+    });
+}
+
+async function sendAiMessage() {
+    const userInput = document.getElementById('aiUserInput');
+    const sendButton = document.getElementById('aiSendButton');
+    const message = userInput.value.trim();
+    
+    if (!message) return;
+    
+    // Disable input while processing
+    userInput.disabled = true;
+    sendButton.disabled = true;
+    
+    // Add user message to chat
+    addAiMessage(message, true);
+    userInput.value = '';
+    
+    // Show typing indicator
+    showAiTypingIndicator();
+    
+    try {
+        // Send message to backend
+        const response = await fetchWithTimeout('/api/v1/ai/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({ message: message })
+        }, 30000); // 30 second timeout
+        
+        // Hide typing indicator
+        hideAiTypingIndicator();
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Request failed: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Add bot response to chat
+        if (data.data && data.data.reply) {
+            addAiMessage(data.data.reply, false);
+        } else {
+            addAiMessage('Sorry, I encountered an error processing your request.', false);
+        }
+    } catch (error) {
+        console.error('AI chat error:', error);
+        // Hide typing indicator
+        hideAiTypingIndicator();
+        addAiMessage(`Error: ${error.message}`, false);
+    } finally {
+        // Re-enable input
+        userInput.disabled = false;
+        sendButton.disabled = false;
+        userInput.focus();
+    }
 }
 
 // Update user list to show only friends
@@ -698,18 +1460,217 @@ function updateUserList(users) {
         return;
     }
     
-    users.forEach(username => {
+    // Add AI Assistant as the first option
+    const aiItem = document.createElement('div');
+    aiItem.className = 'user-item';
+    aiItem.innerHTML = `
+        <span>🤖 AI Assistant</span>
+        <button class="chat-btn" id="chatBtn-ai">Chat</button>
+    `;
+    userListDiv.appendChild(aiItem);
+    
+    // Add event listener to the AI chat button
+    document.getElementById('chatBtn-ai').addEventListener('click', () => {
+        startChatWithAI();
+    });
+    
+    users.forEach((username, index) => {
         if (username !== currentUser) {
             const userItem = document.createElement('div');
             userItem.className = 'user-item';
             userItem.innerHTML = `
                 <span>${username}</span>
-                <button class="chat-btn" onclick="startChatWithUser('${username}')">Chat</button>
+                <button class="chat-btn" id="chatBtn-${index}">Chat</button>
             `;
             userListDiv.appendChild(userItem);
+            
+            // Add event listener to the chat button
+            document.getElementById(`chatBtn-${index}`).addEventListener('click', () => {
+                startChatWithUser(username);
+            });
         }
     });
 }
+
+// Start chat with a user
+function startChatWithUser(username) {
+    currentChatRecipient = username;
+    clearChat();
+    addSystemMessage(`Started chat with ${username}`);
+    
+    // Hide file upload section when chatting with a user
+    document.querySelector('.file-upload-section').style.display = 'flex';
+}
+
+// Start chat with AI
+function startChatWithAI() {
+    currentChatRecipient = 'AI Assistant';
+    clearChat();
+    addSystemMessage('Started chat with AI Assistant');
+    
+    // Add initial AI message
+    const initialMessage = {
+        from: 'AI Assistant',
+        message: 'Hello! I\'m your AI assistant. How can I help you today?',
+        timestamp: new Date().toISOString()
+    };
+    addMessageToChat(initialMessage, 'received');
+    
+    // Hide file upload section when chatting with AI
+    document.querySelector('.file-upload-section').style.display = 'none';
+}
+
+// Send message function
+function sendMessage() {
+    try {
+        const message = messageInput.value.trim();
+        
+        if (!message) {
+            return;
+        }
+        
+        if (!currentChatRecipient) {
+            showMessageError('Please select a friend to chat with');
+            return;
+        }
+        
+        // Check if we're chatting with AI (do this check first to bypass other validations)
+        if (currentChatRecipient === 'AI Assistant') {
+            sendAiMessageToBackend(message);
+            return;
+        }
+        
+        if (currentChatRecipient === currentUser) {
+            showMessageError('You cannot send a message to yourself');
+            return;
+        }
+        
+        // Check if recipient is in friends list (only for real users, not AI)
+        const isFriend = friends.some(friend => friend.username === currentChatRecipient);
+        if (!isFriend) {
+            showMessageError('You can only chat with friends');
+            return;
+        }
+        
+        if (!socket || !socket.connected) {
+            showMessageError('Not connected to chat server. Please refresh the page.');
+            return;
+        }
+        
+        if (message.length > 1000) {
+            showMessageError('Message too long. Please keep it under 1000 characters.');
+            return;
+        }
+        
+        // Emit private message event
+        socket.emit('privateMessage', {
+            to: currentChatRecipient,
+            message: message
+        });
+        
+        // Add user message to chat immediately
+        const userMessage = {
+            from: currentUser,
+            to: currentChatRecipient,
+            message: message,
+            timestamp: new Date().toISOString()
+        };
+        addMessageToChat(userMessage, 'sent');
+        messageHistory.push(userMessage);
+        
+        // Clear message input
+        messageInput.value = '';
+        
+    } catch (error) {
+        logError('Send Message', error);
+        showMessageError('Failed to send message. Please try again.');
+    }
+}
+
+// Send AI message to backend
+async function sendAiMessageToBackend(message) {
+    try {
+        // Add user message to chat immediately
+        const userMessage = {
+            from: currentUser,
+            message: message,
+            timestamp: new Date().toISOString()
+        };
+        addMessageToChat(userMessage, 'sent');
+        
+        // Show typing indicator
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'message system';
+        typingIndicator.id = 'aiTypingIndicator';
+        typingIndicator.style.textAlign = 'center';
+        typingIndicator.style.color = '#666';
+        typingIndicator.style.fontStyle = 'italic';
+        typingIndicator.textContent = 'AI Assistant is typing...';
+        chatMessagesDiv.appendChild(typingIndicator);
+        chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+        
+        // Clear message input
+        messageInput.value = '';
+        
+        // Send message to backend
+        const response = await fetchWithTimeout('/api/v1/ai/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({ message: message })
+        }, 30000); // 30 second timeout
+        
+        // Remove typing indicator
+        if (typingIndicator.parentNode) {
+            typingIndicator.parentNode.removeChild(typingIndicator);
+        }
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Request failed: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Add bot response to chat
+        if (data.data && data.data.reply) {
+            const botMessage = {
+                from: 'AI Assistant',
+                message: data.data.reply,
+                timestamp: new Date().toISOString()
+            };
+            addMessageToChat(botMessage, 'received');
+            messageHistory.push(botMessage);
+        } else {
+            const errorMessage = {
+                from: 'AI Assistant',
+                message: 'Sorry, I encountered an error processing your request.',
+                timestamp: new Date().toISOString()
+            };
+            addMessageToChat(errorMessage, 'received');
+            messageHistory.push(errorMessage);
+        }
+    } catch (error) {
+        console.error('AI chat error:', error);
+        
+        // Remove typing indicator if it exists
+        const typingIndicator = document.getElementById('aiTypingIndicator');
+        if (typingIndicator && typingIndicator.parentNode) {
+            typingIndicator.parentNode.removeChild(typingIndicator);
+        }
+        
+        const errorMessage = {
+            from: 'AI Assistant',
+            message: `Error: ${error.message}`,
+            timestamp: new Date().toISOString()
+        };
+        addMessageToChat(errorMessage, 'received');
+        messageHistory.push(errorMessage);
+    }
+}
+
 
 // Authentication functions
 async function login() {

@@ -11,7 +11,13 @@ import { setCsrfCookie, verifyCsrfToken } from './middlewares/csrf.middleware.js
 import helmet from 'helmet';
 import hpp from 'hpp';
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
+import { authLimiter, otpLimiter } from './auth/utils/rate-limiter.js';
+
+// E2EE routes
+import e2eeRouter from './routes/e2ee.routes.js';
+
+// AI routes
+import aiRouter from './routes/ai.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -57,40 +63,7 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 // Routes
 app.use('/test', healthRouter);
 
-// Rate limiters for auth + OTP endpoints
-// More scalable rate limiting configuration
-const authLimiter = rateLimit({ 
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true, 
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many authentication requests from this IP, please try again later.",
-    code: "TOO_MANY_REQUESTS"
-  }
-});
-
-// Per-key rate limiting for OTP requests to allow more concurrent users
-const otpLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 5, // Limit each email/IP to 5 OTP requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Use email as key for OTP requests if available, otherwise use IP
-    if (req.body && req.body.email) {
-      return req.body.email;
-    }
-    return req.ip;
-  },
-  message: {
-    success: false,
-    message: "Too many OTP requests. Please wait before requesting another code.",
-    code: "TOO_MANY_OTP_REQUESTS"
-  }
-});
-
+// Apply rate limiters
 app.use('/api/v1/auth/login', authLimiter);
 app.use('/api/v1/auth/register', authLimiter);
 app.use('/api/v1/auth/refresh-token', authLimiter);
@@ -106,6 +79,18 @@ app.use('/upload', fileRouter);
 // Contact routes
 import contactRouter from './routes/contact.routes.js';
 app.use('/api/v1/contacts', contactRouter);
+
+// E2EE routes
+app.use('/api/v1/e2ee', e2eeRouter);
+
+// AI routes
+app.use('/api/v1/ai', aiRouter);
+
+// Email monitoring routes (only in development or with proper authentication in production)
+import emailMonitorRouter from './routes/email-monitor.routes.js';
+if (process.env.NODE_ENV === 'development') {
+  app.use('/api/v1/email-monitor', emailMonitorRouter);
+}
 
 // Auth routes already mounted above
 

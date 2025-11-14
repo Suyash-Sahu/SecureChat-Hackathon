@@ -79,7 +79,26 @@ const userSchema = new Schema(
             default: 0
         },
         emailVerificationToken: String,
-        emailVerificationExpiry: Date
+        emailVerificationExpiry: Date,
+        // E2EE fields
+        identityPublicKey: {
+            type: String,
+            default: ""
+        },
+        signedPreKeyPublic: {
+            type: String,
+            default: ""
+        },
+        signedPreKeySignature: {
+            type: String,
+            default: ""
+        },
+        oneTimePreKeys: [{
+            type: String
+        }],
+        deviceIds: [{
+            type: String
+        }]
     },
     { timestamps: true }
 );

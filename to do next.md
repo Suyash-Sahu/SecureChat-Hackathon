@@ -102,7 +102,7 @@ Optional:
 - Recipient dropdown: built from contacts plus online users (done). Continue to exclude self.
 - Session data parity with code-editor:
   - After login/verify, backend returns session payload with `username, email, role` and sets cookies; UI may display role if needed.
-
+  
 ### 12) Route Protection Registry (adopted from code-editor)
 - Create an Express-based route registry:
   - `publicRoutes`: no auth needed (e.g., `/`, `/test`)

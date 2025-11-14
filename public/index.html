@@ -11,6 +11,8 @@
     <!-- Bootstrap CSS (if not already included) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <!-- Add the consent modal CSS -->
+    <link rel="stylesheet" href="e2ee/consent-modal.css">
 </head>
 
 <body>
@@ -29,9 +31,9 @@
                     <div class="input-group">
                         <input type="password" id="loginPassword" placeholder="Password" required>
                     </div>
-                    <button id="loginBtn" onclick="login()">Login</button>
-                    <p class="auth-switch">Don't have an account? <a href="#" onclick="showRegister()">Register</a></p>
-                    <p class="auth-switch"><a href="#" onclick="showForgotPassword()">Forgot Password?</a></p>
+                    <button id="loginBtn">Login</button>
+                    <p class="auth-switch">Don't have an account? <a href="#" id="showRegisterLink">Register</a></p>
+                    <p class="auth-switch"><a href="#" id="showForgotPasswordLink">Forgot Password?</a></p>
                 </div>
 
                 <!-- Register Form -->
@@ -46,8 +48,8 @@
                     <div class="input-group">
                         <input type="password" id="registerPassword" placeholder="Password" required>
                     </div>
-                    <button id="registerBtn" onclick="register()">Register</button>
-                    <p class="auth-switch">Already have an account? <a href="#" onclick="showLogin()">Login</a></p>
+                    <button id="registerBtn">Register</button>
+                    <p class="auth-switch">Already have an account? <a href="#" id="showLoginLink">Login</a></p>
                 </div>
 
                 <!-- OTP Verification Form -->
@@ -58,9 +60,9 @@
                     <div class="input-group">
                         <input type="text" id="otpInput" placeholder="Enter 6-digit code" maxlength="6" required>
                     </div>
-                    <button id="verifyOtpBtn" onclick="verifyOtp()">Verify & Complete Registration</button>
-                    <button id="resendOtpBtn" onclick="resendOtp()" class="resend-btn">Resend Code</button>
-                    <p class="auth-switch"><a href="#" onclick="showLogin()">Back to Login</a></p>
+                    <button id="verifyOtpBtn">Verify & Complete Registration</button>
+                    <button id="resendOtpBtn" class="resend-btn">Resend Code</button>
+                    <p class="auth-switch"><a href="#" id="backToLoginLink">Back to Login</a></p>
                 </div>
 
                 <!-- Forgot Password Form -->
@@ -69,8 +71,8 @@
                     <div class="input-group">
                         <input type="email" id="forgotEmail" placeholder="Email" required>
                     </div>
-                    <button id="forgotBtn" onclick="forgotPassword()">Send Reset Code</button>
-                    <p class="auth-switch"><a href="#" onclick="showLogin()">Back to Login</a></p>
+                    <button id="forgotBtn">Send Reset Code</button>
+                    <p class="auth-switch"><a href="#" id="backToLoginFromForgotLink">Back to Login</a></p>
                 </div>
 
                 <!-- Reset Password Form -->
@@ -85,8 +87,8 @@
                     <div class="input-group">
                         <input type="password" id="newPassword" placeholder="New password" required>
                     </div>
-                    <button id="resetPasswordBtn" onclick="resetPassword()">Reset Password</button>
-                    <p class="auth-switch"><a href="#" onclick="showForgotPassword()">Back</a> | <a href="#" onclick="showLogin()">Login</a></p>
+                    <button id="resetPasswordBtn">Reset Password</button>
+                    <p class="auth-switch"><a href="#" id="backToForgotLink">Back</a> | <a href="#" id="showLoginFromResetLink">Login</a></p>
                 </div>
 
                 <div id="authError" class="error-message"></div>
@@ -98,7 +100,7 @@
             <div class="chat-header">
                 <div class="user-info">
                     <span>Logged in as: <strong id="currentUser"></strong></span>
-                    <button id="logoutBtn" onclick="logout()" class="logout-btn">Logout</button>
+                    <button id="logoutBtn" class="logout-btn">Logout</button>
                 </div>
                 <div class="online-users">
                     <span>Online Friends: <span id="userCount">0</span></span>
@@ -108,10 +110,10 @@
             <div class="chat-container">
                 <div class="sidebar">
                     <div class="sidebar-tabs">
-                        <button id="onlineUsersTab" class="tab-btn active" onclick="switchTab('onlineUsers')">Online Users</button>
-                        <button id="contactsTab" class="tab-btn" onclick="switchTab('contacts')">My Friends</button>
-                        <button id="requestsTab" class="tab-btn" onclick="switchTab('requests')">Requests</button>
-                        <button id="addContactTab" class="tab-btn" onclick="switchTab('addContact')">Add Contact</button>
+                        <button id="onlineUsersTab" class="tab-btn active">Online Users</button>
+                        <button id="contactsTab" class="tab-btn">My Friends</button>
+                        <button id="requestsTab" class="tab-btn">Requests</button>
+                        <button id="addContactTab" class="tab-btn">Add Contact</button>
                     </div>
 
                     <div class="tab-content">
@@ -125,7 +127,7 @@
                         <div id="contactsContent" class="tab-panel">
                             <div class="contacts-header">
                                 <h3>My Friends</h3>
-                                <button class="add-contact-btn" onclick="switchTab('addContact')">Add Friend</button>
+                                <button class="add-contact-btn" id="addFriendButton">Add Friend</button>
                             </div>
                             <div id="contactsList" class="contacts-list">
                                 <ul id="friendsList"></ul>
@@ -137,8 +139,8 @@
                             <div class="requests-header">
                                 <h3>Friend Requests</h3>
                                 <div class="request-tabs">
-                                    <button id="incomingRequestsTab" class="request-tab-btn active" onclick="switchRequestTab('incoming')">Incoming</button>
-                                    <button id="outgoingRequestsTab" class="request-tab-btn" onclick="switchRequestTab('outgoing')">Outgoing</button>
+                                    <button id="incomingRequestsTab" class="request-tab-btn active">Incoming</button>
+                                    <button id="outgoingRequestsTab" class="request-tab-btn">Outgoing</button>
                                 </div>
                             </div>
                             <div class="requests-list">
@@ -152,7 +154,7 @@
                             <h3>Add Contact</h3>
                             <div class="search-section">
                                 <input type="text" id="userSearchInput" placeholder="Search by username or email">
-                                <button id="searchUsersBtn" onclick="searchUsers()">Search</button>
+                                <button id="searchUsersBtn">Search</button>
                             </div>
                             <div id="searchResults" class="search-results"></div>
                         </div>
@@ -166,11 +168,10 @@
                         <div class="file-upload-section">
                             <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.pdf,.docx,.xlsx,.txt,.wav,.mp3,.mp4,.avi,.mov,.wmv,.flv,.webm,.mkv"
                                 style="display: none;">
-                            <button id="attachBtn" onclick="document.getElementById('fileInput').click()"
-                                class="attach-btn">
+                            <button id="attachBtn" class="attach-btn">
                                 📎 Attach File
                             </button>
-                            <button id="uploadBtn" onclick="uploadAndSendFile()" class="upload-btn"
+                            <button id="uploadBtn" class="upload-btn"
                                 style="display: none;">
                                 📤 Send File
                             </button>
@@ -179,7 +180,7 @@
 
                         <div class="input-group">
                             <input type="text" id="messageInput" placeholder="Type your message..." maxlength="500">
-                            <button id="sendBtn" onclick="sendMessage()">Send</button>
+                            <button id="sendBtn">Send</button>
                         </div>
                     </div>
                 </div>
@@ -201,6 +202,10 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <!-- Add the E2EE and stego scanner scripts -->
+    <script src="e2ee/useE2EE.js"></script>
+    <script src="e2ee/useStegoScanner.js"></script>
+    <script src="e2ee/ConsentModal.js"></script>
     <script src="script.js"></script>
 </body>
 

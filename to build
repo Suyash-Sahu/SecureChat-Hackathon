@@ -1,3 +1,502 @@
-Stenography,homoglyph,short URL
+in this i want to make my chat E2EE with block chain 
+1 — High-level approach (one sentence)
 
-https://chatgpt.com/c/68d57413-c870-8321-91cb-6954d746da6a
+Add client-side key management + X3DH handshake + Double Ratchet for per-conversation encryption; send only ciphertext packets to server; when files are suspicious ask consent, compute & sign canonical consent hash on client, send to backend which verifies signature and enqueues an on-chain anchor job; deliver file only after receiver consent anchored.
+
+2 — Libraries & tech choices (recommended)
+
+Client E2EE: libsignal-protocol (js) or  for simpler Ed25519/X25519 use libsodium-wrappers + double-ratchet-js if you prefer to assemble.
+
+Crypto primitives in browser: WebCrypto + libsodium-wrappers for signing.
+
+Backend: ethers.js to call smart contract, bull (Redis) for job queue.
+
+Smart contract: minimal ConsentStorage.sol (emits event) on Mumbai/Sepolia.
+
+3 — Data & DB changes (what to add/update)
+a) User model (add)
+
+identityPublicKey (Ed25519 hex or base64)
+
+signedPreKeyPublic (X25519)
+
+signedPreKeySignature
+
+oneTimePreKeys (array of public keys, mark consumed)
+
+deviceIds (optional)
+
+b) Message model (modify)
+
+add ciphertext (string / base64)
+
+ratchetHeader (object/json)
+
+remove any plaintext column (or stop writing into it)
+
+add isE2EE: true flag
+
+c) Suspicious model (already described earlier)
+
+fileSHA256, consentHash_sender, sig_sender, txHash_sender, consentHash_receiver, txHash_receiver, status, scanReport, filePath
+
+d) Anchor model
+
+consentHash, role, txHash, blockNumber, status, relatedMessageId
+
+4 — Client changes (frontend)
+A. Key management (on login / registration)
+
+On first login, generate:
+
+Identity Key Pair (Ed25519) — long term, non-exportable where possible.
+
+Signed Prekey (X25519) + signature by identity key.
+
+Generate N one-time prekeys (X25519).
+
+Upload public keys only to server:
+
+POST /api/prekeys/upload with { identityPublicKey, signedPreKeyPublic, signedPreKeySig, oneTimePreKeys[] }.
+
+Persist private keys in WebCrypto/IndexedDB (or mobile keystore for RN).
+
+B. Handshake (when opening conversation with a new contact)
+
+When Alice wants to message Bob for first time:
+
+Alice GET /api/prekeys/fetch?userId=bob to get Bob’s identity & prekeys.
+
+Perform X3DH: derive shared secret, create initial ratchet state (Double Ratchet).
+
+Store ratchet state locally (per conversation). Send initial encrypted message containing X3DH header to server as ciphertext packet.
+
+C. Message send/receive (ongoing)
+
+For every message:
+
+Use local double ratchet state to encrypt(plaintext) → get ciphertext, header (ratchet header).
+
+Send to server: POST /api/messages/send { conversationId, ciphertext, header, meta }.
+
+On receive:
+
+Get ciphertext + header via Socket.IO; use local ratchet to decrypt and display.
+
+D. File sending (with stego scanner)
+
+User picks file.
+
+Run useStegoScanner.scan(file) client-side (WASM). Receive { verdict, confidence, report }.
+
+If clean: encrypt file symmetrically (derive file key via ratchet or generate random symmetric key and encrypt with recipient ratchet key), upload encrypted file to POST /api/files/upload/encrypted with metadata fileSHA256.
+
+If suspicious: show ConsentModal with scan report and two steps:
+
+Sender consent: compute canonical consent string (see exact format below), compute H = SHA256(...), sign H with identity signing key (Ed25519), then POST /api/files/upload/suspicious including { messageMeta, fileSHA256, consentHash: H, signature, scanReport }. Do not send plaintext to server unless user consents — we are in the consent step so they are consenting now.
+
+After server returns suspiciousId and will anchor sender consent, notify receiver. Wait for receiver consent anchor before final deliver.
+
+5 — Canonical consent format & signing (exact, copy/paste)
+
+Canonical string (versioned):
+
+consent_v1|role|fileSHA256|conversationId|messageId|partyIdHash|ISO_ts
+
+
+Where:
+
+role = "sender" or "receiver"
+
+fileSHA256 = hex lowercase of raw file bytes (not base64)
+
+partyIdHash = SHA256(userId) (hex) — avoid raw user id on-chain
+
+ISO_ts = timestamp like 2025-11-14T18:00:00Z
+
+Compute & sign (client):
+
+canonical = "consent_v1|sender|..."
+
+H = SHA256(canonical) → 32-byte hex (0x prefixed for on-chain)
+
+sig = Sign_Ed25519(H) (signature encoded base64 or hex)
+
+POST {messageId, conversationId, fileSHA256, consentHash: H, signature: sig, ts} to POST /api/files/upload/suspicious
+
+Verify (backend):
+
+Recompute H locally from provided metadata (server gets partyIdHash and other fields).
+
+Verify sig using the uploader’s identityPublicKey.
+
+If verified → accept and create suspicious record and enqueue anchor job.
+
+6 — Backend changes (APIs & workers)
+A. New/updated endpoints
+
+POST /api/prekeys/upload — store public keys
+
+GET /api/prekeys/fetch?userId= — return identityPublicKey, signedPreKey, some oneTimePreKey and mark it consumed
+
+POST /api/messages/send — store ciphertext & header (no plaintext)
+
+POST /api/files/upload/encrypted — store encrypted file (metadata)
+
+POST /api/files/upload/suspicious — verify signature, store quarantine copy, create suspicious db record, enqueue anchor job for consentHash_sender
+
+POST /api/suspicious/receiver-consent — verify receiver signature, enqueue anchor job for consentHash_receiver
+
+GET /api/anchors/:messageId — return anchor txs
+
+B. Anchoring worker (jobs/anchoring.job.js)
+
+Contains anchorNow(consentHash, role, relatedMessageId):
+
+Prepare bytes32 from hex (0x...).
+
+Send tx = contract.storeConsent(bytes32, roleInt) via ethers signer.
+
+Wait for tx.wait(confirmations).
+
+Save txHash, blockNumber, status to Anchor and update Suspicious record.
+
+Retry with exponential backoff on RPC errors. Use bull or similar.
+
+C. Security on backend
+
+NEVER store user's private signing keys.
+
+For verifying signatures, fetch identity public key from User model.
+
+Limit access to suspicious endpoints; only authenticated users can post receiver consent for themselves.
+
+Quarantined files should be stored encrypted at rest and only accessible by backend until delivery; define retention and deletion policy.
+
+7 — Smart contract (exact minimal implementation)
+
+contracts/ConsentStorage.sol:
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract ConsentStorage {
+    event ConsentStored(bytes32 hashValue, uint8 role, uint256 timestamp);
+
+    // role: 0 = sender, 1 = receiver
+    function storeConsent(bytes32 hashValue, uint8 role) public {
+        emit ConsentStored(hashValue, role, block.timestamp);
+    }
+}
+
+
+Deploy on Mumbai/Sepolia.
+
+Save ABI and CONTRACT_ADDRESS in backend config.
+
+8 — Message JSON formats (exact examples)
+A. Encrypted message packet (sent from client to server)
+{
+  "conversationId": "conv123",
+  "senderId": "alice",
+  "recipientId": "bob",
+  "ciphertext": "base64-encoded-ciphertext",
+  "ratchetHeader": {
+    "publicKey": "base64",
+    "messageNonce": 42,
+    "other": "..."
+  },
+  "timestamp": "2025-11-14T18:00:00Z",
+  "isE2EE": true
+}
+
+B. Suspicious upload (sender consent)
+{
+  "messageId": "msg789",
+  "conversationId": "conv123",
+  "senderId": "alice",
+  "fileSHA256": "abcd1234... (hex lowercase)",
+  "consentHash": "0x..." ,     // SHA-256 hex
+  "signature": "base64-signature",
+  "scanReport": {...},
+  "ts": "2025-11-14T18:00:00Z"
+}
+
+9 — Delivery policy & race conditions
+
+Sender flow
+
+After POST /files/upload/suspicious, backend enqueues anchor job for sender; backend returns suspiciousId and txHash_sender when confirmed.
+
+Notify receiver with link to txHash_sender and scan report.
+
+Receiver flow
+
+Receiver computes consentHash_receiver, signs and POST /suspicious/receiver-consent.
+
+Backend anchors receiver; once txHash_receiver confirmed, backend sets status=delivered and either:
+
+unlocks encrypted file to receiver (gives file decryption key via ratchet), or
+
+sends encrypted blob to receiver which can decrypt client-side.
+
+Do not deliver if receiver rejects (delete quarantine copy). If anchoring fails after retries, notify both parties and keep in pending state.
+Testing checklist (must pass)
+
+Key upload: client uploads public prekeys to server and server stores them.
+
+Handshake: Alice fetches Bob prekeys; X3DH produces the same shared secret as Bob when he consumes the one-time prekey.
+
+Message roundtrip: send a message Alice→server→Bob; Bob decrypts successfully and content matches plaintext.
+
+Rekeying: ratchet advances correctly across multiple messages.
+
+File clean path: safe file scanned → encrypted locally → uploaded → receiver decrypts.
+
+File suspicious path: sender consent signed & anchored on-chain; receiver notified; receiver signs & anchors and receives file only after anchored.
+
+Signature verification: backend rejects invalid signatures.
+
+Anchor verification: verifyAnchor(txHash, expectedHash) returns true by reading emitted event.
+
+Negative tests: revoked key, replays, malformed headers are rejected.
+Dev tasks & parallel work split (3 people)
+
+Person A (E2EE lead): implement client key generation, prekey upload API, X3DH + double ratchet logic (useE2EE hook), message encryption/decryption, file encryption on client.
+
+Person B (Backend & Anchoring lead): prekeys endpoints, message storage changes, suspicious endpoints, anchoring.service + job worker, contract deployment scripts, anchor DB model.
+
+Person C (Frontend + Stego + UX): WASM scanner integration, ConsentModal & SuspiciousInbox UI, file picker, admin dashboards and tx link displays, testing flows.
+
+13 — Quick verification snippets and commands
+Verify anchor event (backend)
+
+Use ethers.js to fetch logs with event signature and check hashValue equals consentHash.
+
+Hardhat local dev
+
+Start local chain; deploy contract; set RPC_URL=http://localhost:8545 in .env for testing.
+
+14 — Final notes / gotchas
+
+E2EE implies metadata leak: server still knows conversation participants, timestamps, and message sizes. Consider padding if you care.
+
+Signing order: sign canonical hash of the file after file SHA256 is computed to avoid mismatch.
+
+Clock skew: client timestamps must be checked only for human-readable; canonical string includes ts but verification can accept small skew tolerance; the hash includes ts so a different ts will alter H and the signature — ensure clients send their exact ts used to compute H.
+
+One-time prekey consumption: mark one-time prekeys consumed immediately on server when fetched, to prevent reuse.
+
+THE CORRECT FLOW (Final Correct Sequence)
+
+I’ll explain for file sharing, but the same logic works for messages (without stego scan).
+
+🔵 STEP 1 — User A selects a file
+
+User A picks an image/file from their device.
+
+No encryption yet.
+
+🔵 STEP 2 — Client-side steganography scan
+
+Your WASM scanner runs locally:
+
+Scan file for LSB/MSB patterns
+
+Detect anomalies
+
+Possibly detect text hidden in image
+
+Result:
+
+verdict = "clean" or "suspicious"
+confidence
+scanReport
+
+
+Still no encryption at this stage.
+You decide next steps depending on verdict.
+
+🔵 STEP 3 — If CLEAN → Normal E2EE flow
+
+If no suspicious content:
+
+1️⃣ User A encrypts the file using the ratchet session key
+2️⃣ Sends ciphertext → server → user B
+3️⃣ User B decrypts with their own ratchet key
+No blockchain step for clean files.
+
+✔ E2EE
+✔ Fast
+✔ Private
+✔ Simple
+
+This part is correct in your understanding.
+
+🔴 STEP 4 — If SUSPICIOUS → Ask User A for CONSENT
+
+Before encryption, before sending anything:
+
+User A must approve sending a suspicious file.
+
+Your popup (ConsentModal) shows:
+
+Why the file is suspicious
+
+What risks exist
+
+Explain that a proof (hash) will be stored on blockchain
+
+If user A approves, then:
+
+🔵 STEP 5 — Compute SHA256 hash of RAW file
+
+Important:
+👉 Hash the original file bytes,
+👉 NOT encrypted file
+👉 NOT base64
+👉 NOT metadata
+
+fileSHA256 = SHA256(file_bytes)
+
+
+This hash becomes the identity of the file.
+
+✔ This step you understood correctly.
+
+🔵 STEP 6 — Build the Canonical Consent String
+
+(Same as before)
+
+consent_v1|sender|fileSHA256|conversationId|messageId|senderIdHash|timestamp
+
+
+Then:
+
+H = SHA256(canonical_string)
+signature = Sign(H, sender_identity_private_key)
+
+
+You now have:
+
+file hash
+
+consent hash
+
+signature
+
+🔵 STEP 7 — SEND PLAINTEXT to server (quarantine)
+
+⚠️ ONLY in suspicious case, because file must be checked manually OR stored for audit.
+
+So you send to backend:
+
+raw file
+
+file SHA256
+
+consentHash
+
+signature
+
+scan report
+
+This is correct → ONLY suspicious files go plaintext to server, clean files never do.
+
+Server will:
+
+Verify signature
+
+Save file in quarantined storage
+
+Create DB record
+
+Queue blockchain anchor job
+
+🔵 STEP 8 — Backend stores consent hash on Blockchain
+
+Backend calls your Solidity contract:
+
+storeConsent(consentHash, role=sender)
+
+
+Blockchain stores:
+
+consentHash
+
+role (0 = sender)
+
+timestamp
+
+No file, no user data, no risk.
+
+Receiver gets notification:
+
+Sender wants to send a suspicious file.
+View scan report.
+Sender blockchain proof: txHash
+Approve or reject?
+
+
+Now User B decides.
+
+🔵 STEP 9 — If User B approves
+
+User B sees:
+
+Sender's warning
+
+Scan report
+
+Blockchain tx of sender consent
+
+If they click "Accept", then:
+
+1️⃣ B builds their own consent string
+2️⃣ B signs it
+3️⃣ Sends to backend
+4️⃣ Backend anchors consentHash_receiver on blockchain
+5️⃣ Backend delivers the quarantined file to B
+6️⃣ B decrypts with session ratchet key
+
+This step you misunderstood —
+Receiver only decrypts AFTER they consent.
+
+🔵 STEP 10 — If User B rejects
+
+Backend:
+
+❌ Deletes quarantined file
+❌ Marks suspicious record “Rejected”
+❌ No delivery happens
+
+✅ So the Final Correct Flow is:
+CLEAN FILE
+
+✔ Scan
+✔ Encrypt (client)
+✔ Send ciphertext
+✔ Receiver decrypts
+❌ No blockchain
+
+SUSPICIOUS FILE
+
+Scan → suspicious
+
+Ask sender
+
+Sender approves → sign consent → send to server
+
+Server anchors sender consent
+
+Notify receiver
+
+Receiver reviews
+
+Receiver approves → signs consent
+
+Server anchors receiver consent
+
+Server delivers plaintext file → encrypt with receiver's ratchet key
+
+Receiver decrypts normally
